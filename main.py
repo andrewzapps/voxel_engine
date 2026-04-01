@@ -25,7 +25,7 @@ class voxelEngine:
     
     def update(self):
         self.delta_time = self.clock.tick()
-        self.time = self.pg.time.get_ticks() * 0.001
+        self.time = pg.time.get_ticks() * 0.001
         pg.display.set_caption(f'{self.clock.get_fps() :.0f}')
 
     def render(self):
@@ -48,4 +48,4 @@ class voxelEngine:
 
 if __name__ == '__main__':
     app = voxelEngine();
-    app.run();
+    app.run()
