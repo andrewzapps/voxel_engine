@@ -9,6 +9,7 @@
         "statusBar.debuggingBackground": "#02487a",
         "statusBar.debuggingForeground": "#FCF9FF",
         "statusBar.noFolderBackground": "#44027A",
-        "statusBar.noFolderForeground": "#FCF9FF"
+        "statusBar.noFolderForeground": "#FCF9FF",
+        "activityBar.background": "#1F321F"
     }
 }

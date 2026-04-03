@@ -15,7 +15,7 @@ class Camera:
 
     def update(self):
         self.update_vectors()
-        self.update_view_matrix
+        self.update_view_matrix()
 
     def update_view_matrix(self):
         self.m_view = glm.lookAt(self.position, self.position + self.forward, self.up)
