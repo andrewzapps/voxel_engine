@@ -20,7 +20,7 @@ class baseMesh:
         vbo = self.ctx.buffer(vertex_data)
         #vertex array object contains buffer object, format and upacks attributes
         vao = self.ctx.vertex_array(
-            self.program, [(vbo, self.vbo_format, *self.attrs)] skip_errors=True
+            self.program, [(vbo, self.vbo_format, *self.attrs)], skip_errors=True
         )
         return vao
 
