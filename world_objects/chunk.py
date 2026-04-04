@@ -1,9 +1,18 @@
 from settings import *
+from meshes.chunk_mesh import chunkMesh
 
 class Chunk:
     def __init__(self, app):
         self.app = app
         self.voxels: np.array = self.build_voxels
+        self.mesh: chunkMesh = None
+        self.build_mesh()
+
+    def build_mesh(self):
+        self.mesh = chunkMesh(self)
+
+    def render(self):
+        self.mesh.render()
     
     def build_voxels(self):
         #empty chunk
