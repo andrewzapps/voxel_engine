@@ -4,7 +4,7 @@ from meshes.chunk_mesh import chunkMesh
 class Chunk:
     def __init__(self, app):
         self.app = app
-        self.voxels: np.array = self.build_voxels
+        self.voxels: np.array = self.build_voxels()
         self.mesh: chunkMesh = None
         self.build_mesh()
 

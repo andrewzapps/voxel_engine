@@ -7,7 +7,7 @@ def is_void(voxel_pos, chunk_voxels):
             return False
     return True
 def add_data(vertex_data, index, *vertices):
-    for vertix in vertices:
+    for vertex in vertices:
         for attr in vertex:
             vertex_data[index] = attr
             index += 1
@@ -20,7 +20,7 @@ def build_chunk_mesh(chunk_voxels, format_size):
     for x in range(CHUNK_SIZE):
         for y in range(CHUNK_SIZE):
             for z in range(CHUNK_SIZE):
-                voxel_id = chunk_voxels[x + CHUNK_SIZE * z + CHUNK_AREA * Y]
+                voxel_id = chunk_voxels[x + CHUNK_SIZE * z + CHUNK_AREA * y]
                 if not voxel_id:
                     continue
 
@@ -37,8 +37,8 @@ def build_chunk_mesh(chunk_voxels, format_size):
                 #bottom face 
                 if is_void((x, y - 1, z), chunk_voxels):
 
-                    v0 = (x    , y,      , voxel_id, 1)
-                    v1 = (x + 1, y,      , voxel_id, 1)
+                    v0 = (x    , y, z    , voxel_id, 1)
+                    v1 = (x + 1, y, z    , voxel_id, 1)
                     v2 = (x + 1, y, z + 1, voxel_id, 1)
                     v3 = (x    , y, z + 1, voxel_id, 1)
 
