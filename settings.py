@@ -4,7 +4,7 @@ import glm
 import math 
 
 #resolutions
-WIN_RES = glm.vec2(1600, 900)
+WIN_RES = glm.vec2(1280, 720)
 
 #chunk
 CHUNK_SIZE = 32

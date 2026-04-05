@@ -6,7 +6,7 @@ class Textures:
         self.app = app
         self.ctx = app.ctx
 
-        self.texture_0 = self.load('test.png')
+        self.texture_0 = self.load('frame.png')
 
         #assign texture unit
         self.texture_0.use(location = 0)
