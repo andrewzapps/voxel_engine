@@ -19,10 +19,11 @@ class Chunk:
         self.mesh.program['m_model'].write(self.m_model)
 
     def build_mesh(self):
-        self.mesh = chunkMesh(self)
+        if not self.is_empty:
+            self.mesh = chunkMesh(self)
 
     def render(self):
-        if not self.is_empty:
+        if self.mesh is not None:
             self.set_uniform()
             self.mesh.render()
     

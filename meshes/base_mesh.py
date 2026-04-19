@@ -17,6 +17,8 @@ class baseMesh:
 
     def get_vao(self):
         vertex_data = self.get_vertex_data()
+        if len(vertex_data) == 0:
+            return None
         vbo = self.ctx.buffer(vertex_data)
         #vertex array object contains buffer object, format and upacks attributes
         vao = self.ctx.vertex_array(
@@ -25,4 +27,5 @@ class baseMesh:
         return vao
 
     def render(self):
-        self.vao.render() 
+        if self.vao is not None:
+            self.vao.render()
