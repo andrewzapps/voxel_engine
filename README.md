@@ -10,7 +10,7 @@ The project is still a `WIP`, but the main loop, chunk system, terrain generatio
 
 ## Preview
 
-![Voxel terrain preview](assets/preview.png)
+![Voxel terrain preview](assets/preview-new.png)
 
 ## Current Features
 
@@ -63,7 +63,7 @@ python main.py
 - `shader_program.py`: shader loading and uniform updates
 - `textures.py`: texture loading and binding
 - `shaders/`: GLSL shader sources
-- `assets/`: textures and `preview.png`
+- `assets/`: textures and preview images
 
 ## Notes
 
