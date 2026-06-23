@@ -1,4 +1,5 @@
 from settings import *
+from blocks import GRASS, DIRT, STONE
 from meshes.chunk_mesh import chunkMesh
 
 class Chunk:
@@ -19,6 +20,15 @@ class Chunk:
         self.mesh.program['m_model'].write(self.m_model)
 
     def build_mesh(self):
+        if not self.is_empty:
+            self.mesh = chunkMesh(self)
+
+    def rebuild_mesh(self):
+        if self.mesh is not None and self.mesh.vao is not None:
+            self.mesh.vao.release()
+            self.mesh = None
+
+        self.is_empty = not np.any(self.voxels)
         if not self.is_empty:
             self.mesh = chunkMesh(self)
 
@@ -44,7 +54,14 @@ class Chunk:
 
                 for y in range(local_height):
                     wy = y + cy
-                    voxels[x + CHUNK_SIZE * z + CHUNK_AREA * y] = wy + 1
+                    depth = world_height - 1 - wy
+                    if depth == 0:
+                        block_id = GRASS
+                    elif depth < 4:
+                        block_id = DIRT
+                    else:
+                        block_id = STONE
+                    voxels[x + CHUNK_SIZE * z + CHUNK_AREA * y] = block_id
 
         if np.any(voxels):
             self.is_empty = False

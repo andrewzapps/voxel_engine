@@ -36,11 +36,21 @@ const int uv_indices[24] = int[24](
     1, 2, 3, 1, 0, 2    // odd flipped face
 );
 
-vec3 hash31(float p)
+vec3 get_block_color(int block_id, int face_id)
 {
-    vec3 p3 = fract(vec3(p * 21.2) * vec3(0.1031, 0.1030, 0.0973));
-    p3 += dot(p3, p3.yzx + 33.33);
-    return fract((p3.xxy + p3.yzz) * p3.zyx) + 0.05;
+    // face_id: 0=top, 1=bottom, 2=right, 3=left, 4=back, 5=front
+    if (block_id == 1) { // grass
+        if (face_id == 0) return vec3(0.31, 0.55, 0.21);
+        if (face_id == 1) return vec3(0.55, 0.36, 0.22);
+        return vec3(0.45, 0.42, 0.22);
+    }
+    if (block_id == 2) { // dirt
+        return vec3(0.55, 0.36, 0.22);
+    }
+    if (block_id == 3) { // stone
+        return vec3(0.50, 0.50, 0.50);
+    }
+    return vec3(0.5);
 }
 
 void unpack(uint packed_data)
@@ -74,7 +84,7 @@ void main()
     int uv_index = gl_VertexID %  6 + ((face_id & 1) + flip_id * 2) * 6;
 
     uv = uv_coords[uv_indices[uv_index]];
-    voxel_color = hash31(voxel_id);
+    voxel_color = get_block_color(voxel_id, face_id);
     shading = face_shading[face_id] * ao_values[ao_id];
     gl_Position = m_proj * m_view * m_model * vec4(in_position, 1.0);
 }

@@ -6,6 +6,7 @@ from shader_program import shaderProgram
 from scene import Scene
 from player import Player
 from textures import Textures
+from voxel_handler import VoxelHandler
 
 class voxelEngine:
     def __init__(self):
@@ -35,37 +36,41 @@ class voxelEngine:
         self.delta_time = 0
         self.time = 0
 
-        #pg.event.set_grab(True)
-        #pg.mouse.set_visible(False)
+        pg.event.set_grab(True)
+        pg.mouse.set_visible(False)
 
         self.is_running = True
         self.on_init()
 
     def on_init(self):
         self.textures = Textures(self)
-        self.player = Player(self)
         self.shader_program = shaderProgram(self)
         self.scene = Scene(self)
+        self.player = Player(self)
+        self.voxel_handler = VoxelHandler(self)
 
     def update(self):
+        self.delta_time = min(self.clock.tick(), 50)
         self.player.update()
         self.shader_program.update()
         self.scene.update()
+        self.voxel_handler.update()
 
-        self.delta_time = self.clock.tick()
         self.time = pg.time.get_ticks() * 0.001
         pg.display.set_caption(f'{self.clock.get_fps() :.0f}')
 
     def render(self):
         self.ctx.clear(color = BG_COLOR)
         self.scene.render()
+        self.voxel_handler.render()
         pg.display.flip()
 
     def handle_events(self):
-        #check for escpae key to stop
         for event in pg.event.get():
             if event.type == pg.QUIT or (event.type == pg.KEYDOWN and event.key == pg.K_ESCAPE):
                 self.is_running = False
+            else:
+                self.voxel_handler.handle_event(event)
 
     def run(self):
         while(self.is_running):

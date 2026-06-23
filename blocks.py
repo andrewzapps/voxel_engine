@@ -1,0 +1,3 @@
+GRASS = 1
+DIRT = 2
+STONE = 3
