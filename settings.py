@@ -3,8 +3,9 @@ import numpy as np
 import glm
 import math 
 
-#resolutions
-WIN_RES = glm.vec2(1920, 1080)
+#resolutions - sized to fill most of a 1800x1169 screen with room for the
+#title bar/dock, window gets centered on launch (see main.py)
+WIN_RES = glm.vec2(1700, 1060)
 
 #chunk
 CHUNK_SIZE = 32

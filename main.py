@@ -1,8 +1,12 @@
 from settings import *
 import moderngl as mgl
+import os
 import pygame as pg
 import random
 import sys
+
+#center the window on launch instead of wherever the wm feels like putting it
+os.environ.setdefault('SDL_VIDEO_WINDOW_POS', 'centered')
 from shader_program import shaderProgram
 from scene import Scene
 from player import Player
