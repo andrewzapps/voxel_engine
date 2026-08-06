@@ -1,6 +1,7 @@
 from settings import *
-from blocks import GRASS, DIRT, STONE
+from blocks import GRASS, DIRT, SAND, STONE
 from meshes.chunk_mesh import chunkMesh
+from world_gen import cave_column, is_cave_voxel, ore_id, terrain_height, SAND_LEVEL
 
 class Chunk:
     def __init__(self, world, position):
@@ -41,30 +42,37 @@ class Chunk:
         #empty chunk
         voxels = np.zeros(CHUNK_VOL, dtype = 'uint8')
 
-        #fill chunk 
+        #fill chunk
 
         cx, cy, cz = glm.ivec3(self.position) * CHUNK_SIZE
+        ore_cache = {}
 
         for x in range(CHUNK_SIZE):
             for z in range(CHUNK_SIZE):
                 wx = x + cx
-                wz = z + cz 
-                world_height = int(glm.simplex(glm.vec2(wx, wz) * 0.01) * 32 + 32)
+                wz = z + cz
+                world_height = terrain_height(wx, wz)
                 local_height = min(world_height - cy, CHUNK_SIZE)
+                cave_active, cave_center, cave_width = cave_column(wx, wz, world_height)
+                beach = world_height - 1 <= SAND_LEVEL
 
-                for y in range(local_height):
+                for y in range(max(0, local_height)):
                     wy = y + cy
+
+                    if is_cave_voxel(wy, world_height, cave_active, cave_center, cave_width):
+                        continue
+
                     depth = world_height - 1 - wy
                     if depth == 0:
-                        block_id = GRASS
+                        block_id = SAND if beach else GRASS
                     elif depth < 4:
-                        block_id = DIRT
+                        block_id = SAND if beach else DIRT
                     else:
-                        block_id = STONE
+                        block_id = ore_id(wx, wy, wz, world_height, ore_cache) or STONE
                     voxels[x + CHUNK_SIZE * z + CHUNK_AREA * y] = block_id
 
         if np.any(voxels):
             self.is_empty = False
 
-        
+
         return voxels

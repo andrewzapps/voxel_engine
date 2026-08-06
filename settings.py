@@ -15,7 +15,7 @@ CHUNK_VOL = CHUNK_AREA * CHUNK_SIZE
 #world - height is capped like real minecraft, but x/z stream in around the player forever
 WORLD_H = 3
 RENDER_DISTANCE = 6  # chunks, horizontal
-CHUNK_LOAD_BUDGET = 4  # new chunks generated per frame so movement doesn't stutter
+CHUNK_LOAD_BUDGET = 2  # new chunks generated per frame so movement doesn't stutter
 
 #spawn near the middle of chunk (0, *, 0)
 CENTER_XZ = H_CHUNK_SIZE
@@ -44,9 +44,6 @@ PLAYER_WIDTH = 0.6
 GRAVITY = 28.0
 JUMP_SPEED = 8.5
 MOUSE_SENSITIVITY = 0.004
-
-def terrain_height(wx, wz):
-    return int(glm.simplex(glm.vec2(wx, wz) * 0.01) * 32 + 32)
 
 SPAWN_POINT = glm.vec3(CENTER_XZ, 0, CENTER_XZ)
 PLAYER_POS = SPAWN_POINT
