@@ -6,7 +6,7 @@ class Textures:
         self.app = app
         self.ctx = app.ctx
 
-        self.texture_0 = self.load('frame.png')
+        self.texture_0 = self.load('atlas.png')
 
         #assign texture unit
         self.texture_0.use(location = 0)
@@ -21,9 +21,9 @@ class Textures:
                 data = pg.image.tostring(texture, 'RGBA', False)
                 )
 
-        texture.anisotropy = 32.0
-        texture.build_mipmaps()
+        #no mipmaps here - the atlas is tightly packed 16px tiles and mipmapping
+        #bleeds neighbouring tiles into each other at a distance
         texture.filter = (gl.NEAREST, gl.NEAREST)
-        return texture 
+        return texture
 
 

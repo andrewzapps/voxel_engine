@@ -12,7 +12,10 @@ uniform mat4 m_proj;
 uniform mat4 m_view;
 uniform mat4 m_model;
 
-out vec3 voxel_color;
+//texture atlas: voxel_id * 6 + face_id -> tile index in a u_atlas_cols wide grid
+uniform int u_block_tiles[384];
+uniform int u_atlas_cols;
+
 out vec2 uv;
 out float shading;
 
@@ -35,23 +38,6 @@ const int uv_indices[24] = int[24](
     3, 1, 0, 3, 0, 2,   //even flipped face
     1, 2, 3, 1, 0, 2    // odd flipped face
 );
-
-vec3 get_block_color(int block_id, int face_id)
-{
-    // face_id: 0=top, 1=bottom, 2=right, 3=left, 4=back, 5=front
-    if (block_id == 1) { // grass
-        if (face_id == 0) return vec3(0.31, 0.55, 0.21);
-        if (face_id == 1) return vec3(0.55, 0.36, 0.22);
-        return vec3(0.45, 0.42, 0.22);
-    }
-    if (block_id == 2) { // dirt
-        return vec3(0.55, 0.36, 0.22);
-    }
-    if (block_id == 3) { // stone
-        return vec3(0.50, 0.50, 0.50);
-    }
-    return vec3(0.5);
-}
 
 void unpack(uint packed_data)
 {
@@ -83,8 +69,11 @@ void main()
     vec3 in_position = vec3(x, y, z);
     int uv_index = gl_VertexID %  6 + ((face_id & 1) + flip_id * 2) * 6;
 
-    uv = uv_coords[uv_indices[uv_index]];
-    voxel_color = get_block_color(voxel_id, face_id);
+    vec2 corner_uv = uv_coords[uv_indices[uv_index]];
+    int tile = u_block_tiles[voxel_id * 6 + face_id];
+    vec2 tile_origin = vec2(tile % u_atlas_cols, tile / u_atlas_cols);
+    uv = (tile_origin + corner_uv) / float(u_atlas_cols);
+
     shading = face_shading[face_id] * ao_values[ao_id];
     gl_Position = m_proj * m_view * m_model * vec4(in_position, 1.0);
 }

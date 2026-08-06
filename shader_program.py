@@ -1,4 +1,5 @@
 from settings import *
+from blocks import ATLAS_COLS, build_tile_table
 
 class shaderProgram:
     def __init__(self, app):
@@ -15,6 +16,8 @@ class shaderProgram:
         self.chunk['m_proj'].write(m_proj)
         self.chunk['m_model'].write(glm.mat4())
         self.chunk['u_texture_0'] = 0
+        self.chunk['u_atlas_cols'] = ATLAS_COLS
+        self.chunk['u_block_tiles'].value = build_tile_table()
 
     def update(self):
         self.chunk['m_view'].write(self.app.player.m_view)
