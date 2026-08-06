@@ -8,6 +8,7 @@ class shaderProgram:
         #------shader------
         self.chunk = self.get_program(shader_name = 'chunk')
         self.quad = self.get_program(shader_name = 'quad')
+        self.hud = self.get_program(shader_name = 'hud')
         #------------------
         self.set_uniforms_on_init()
 

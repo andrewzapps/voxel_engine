@@ -7,6 +7,7 @@ from scene import Scene
 from player import Player
 from textures import Textures
 from voxel_handler import VoxelHandler
+from hud import HUD
 
 class voxelEngine:
     def __init__(self):
@@ -48,6 +49,7 @@ class voxelEngine:
         self.scene = Scene(self)
         self.player = Player(self)
         self.voxel_handler = VoxelHandler(self)
+        self.hud = HUD(self)
 
     def update(self):
         self.delta_time = min(self.clock.tick(), 50)
@@ -55,6 +57,7 @@ class voxelEngine:
         self.shader_program.update()
         self.scene.update()
         self.voxel_handler.update()
+        self.hud.update()
 
         self.time = pg.time.get_ticks() * 0.001
         pg.display.set_caption(f'{self.clock.get_fps() :.0f}')
@@ -63,14 +66,16 @@ class voxelEngine:
         self.ctx.clear(color = BG_COLOR)
         self.scene.render()
         self.voxel_handler.render()
+        self.hud.render()
         pg.display.flip()
 
     def handle_events(self):
         for event in pg.event.get():
             if event.type == pg.QUIT or (event.type == pg.KEYDOWN and event.key == pg.K_ESCAPE):
                 self.is_running = False
-            else:
-                self.voxel_handler.handle_event(event)
+                continue
+            self.voxel_handler.handle_event(event)
+            self.hud.handle_event(event)
 
     def run(self):
         while(self.is_running):

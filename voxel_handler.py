@@ -1,6 +1,5 @@
 from settings import *
 import pygame as pg
-from blocks import STONE
 from meshes.selection_outline import SelectionOutline
 
 
@@ -10,8 +9,6 @@ class VoxelHandler:
         self.max_distance = 8.0
         self.selected_block = None
         self.selected_normal = None
-        #the block that gets placed on right click - the hotbar will drive this once it exists
-        self.held_block_id = STONE
         self.outline = SelectionOutline(app)
 
     def update(self):
@@ -58,7 +55,7 @@ class VoxelHandler:
         if self._overlaps_player(px, py, pz):
             return
 
-        self.app.scene.world.set_voxel(px, py, pz, self.held_block_id)
+        self.app.scene.world.set_voxel(px, py, pz, self.app.hud.selected_block_id)
 
     def _overlaps_player(self, px, py, pz):
         player_min, player_max = self.app.player.get_aabb()
