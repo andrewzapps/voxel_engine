@@ -2,7 +2,8 @@ import moderngl as mgl
 import pygame as pg
 
 from blocks import ATLAS_COLS, BLOCK_TYPES
-from inventory import HOTBAR_SIZE, Inventory
+from crafting import consume_recipe, match_recipe
+from inventory import HOTBAR_SIZE, Inventory, ItemStack
 from meshes.hud_mesh import HudMesh
 from settings import WIN_RES
 
@@ -16,6 +17,10 @@ INV_COLS = 9
 INV_ROWS = 3
 INV_TOP_MARGIN = 90
 
+CRAFT_GRID_SIZE = 2  # 2x2 personal crafting grid
+CRAFT_AREA_GAP = 40
+CRAFT_OUTPUT_GAP = 40
+
 
 class HUD:
     def __init__(self, app):
@@ -27,6 +32,7 @@ class HUD:
         self.selected_slot = 0
         self.inventory_open = False
         self.cursor_stack = None  # item the mouse is currently dragging around
+        self.crafting_grid = [None] * (CRAFT_GRID_SIZE * CRAFT_GRID_SIZE)
 
         self.width, self.height = int(WIN_RES.x), int(WIN_RES.y)
         self.surface = pg.Surface((self.width, self.height), pg.SRCALPHA)
@@ -63,10 +69,19 @@ class HUD:
         pg.mouse.set_visible(is_open)
         pg.event.set_grab(not is_open)
 
-        if not is_open and self.cursor_stack is not None:
-            #don't let items vanish if the player closes mid-drag
+        if is_open:
+            return
+
+        #don't let items vanish if the player closes mid-drag or with
+        #ingredients still sitting in the crafting grid
+        if self.cursor_stack is not None:
             self.inventory.add_item(self.cursor_stack.block_id, self.cursor_stack.count)
             self.cursor_stack = None
+
+        for i, stack in enumerate(self.crafting_grid):
+            if stack is not None:
+                self.inventory.add_item(stack.block_id, stack.count)
+                self.crafting_grid[i] = None
 
     def handle_event(self, event):
         if event.type == pg.KEYDOWN and event.key == pg.K_e:
@@ -87,10 +102,33 @@ class HUD:
             return
 
         mouse_pos = pg.mouse.get_pos()
+
         for index, rect in enumerate(self._slot_rects()):
             if rect.collidepoint(mouse_pos):
                 self.inventory.slots[index], self.cursor_stack = self.cursor_stack, self.inventory.slots[index]
                 return
+
+        for index, rect in enumerate(self._crafting_input_rects()):
+            if rect.collidepoint(mouse_pos):
+                self.crafting_grid[index], self.cursor_stack = self.cursor_stack, self.crafting_grid[index]
+                return
+
+        if self._crafting_output_rect().collidepoint(mouse_pos):
+            self._collect_crafting_output()
+            return
+
+    def _collect_crafting_output(self):
+        #only lets you pull a result with an empty hand - keeps this simple
+        #instead of matching/merging into whatever's already on the cursor
+        if self.cursor_stack is not None:
+            return
+
+        recipe = match_recipe(self.crafting_grid)
+        if recipe is None:
+            return
+
+        self.crafting_grid = consume_recipe(self.crafting_grid, recipe)
+        self.cursor_stack = ItemStack(recipe.output_id, recipe.output_count)
 
     def _hotbar_rects(self):
         total_width = HOTBAR_SIZE * SLOT_SIZE + (HOTBAR_SIZE - 1) * SLOT_MARGIN
@@ -116,14 +154,48 @@ class HUD:
         #index order matches Inventory.slots: hotbar first, then the main grid
         return self._hotbar_rects() + self._main_inventory_rects()
 
+    def _crafting_input_rects(self):
+        main_rects = self._main_inventory_rects()
+        start_x = max(rect.right for rect in main_rects) + CRAFT_AREA_GAP
+        start_y = min(rect.top for rect in main_rects)
+
+        rects = []
+        for row in range(CRAFT_GRID_SIZE):
+            for col in range(CRAFT_GRID_SIZE):
+                x = start_x + col * (SLOT_SIZE + SLOT_MARGIN)
+                y = start_y + row * (SLOT_SIZE + SLOT_MARGIN)
+                rects.append(pg.Rect(x, y, SLOT_SIZE, SLOT_SIZE))
+        return rects
+
+    def _crafting_output_rect(self):
+        input_rects = self._crafting_input_rects()
+        x = max(rect.right for rect in input_rects) + CRAFT_OUTPUT_GAP
+        center_y = (min(rect.top for rect in input_rects) + max(rect.bottom for rect in input_rects)) // 2
+        return pg.Rect(x, center_y - SLOT_SIZE // 2, SLOT_SIZE, SLOT_SIZE)
+
     def update(self):
         self.surface.fill((0, 0, 0, 0))
         self._draw_crosshair()
         self._draw_slots(self._hotbar_rects(), range(0, HOTBAR_SIZE), highlight_selected=True)
         if self.inventory_open:
             self._draw_slots(self._main_inventory_rects(), range(HOTBAR_SIZE, len(self.inventory.slots)))
+            self._draw_crafting_area()
             self._draw_cursor_stack()
         self.texture.write(pg.image.tostring(self.surface, 'RGBA', True))
+
+    def _draw_crafting_area(self):
+        for rect, stack in zip(self._crafting_input_rects(), self.crafting_grid):
+            pg.draw.rect(self.surface, (0, 0, 0, 90), rect)
+            pg.draw.rect(self.surface, (255, 255, 255, 120), rect, width=2)
+            self._draw_stack(stack, rect)
+
+        output_rect = self._crafting_output_rect()
+        pg.draw.rect(self.surface, (0, 0, 0, 90), output_rect)
+        pg.draw.rect(self.surface, (255, 255, 255, 120), output_rect, width=2)
+
+        recipe = match_recipe(self.crafting_grid)
+        if recipe is not None:
+            self._draw_stack(ItemStack(recipe.output_id, recipe.output_count), output_rect)
 
     def _draw_crosshair(self):
         if self.inventory_open:

@@ -11,6 +11,7 @@ def make_hud():
     hud.selected_slot = 0
     hud.inventory_open = False
     hud.cursor_stack = None
+    hud.crafting_grid = [None, None, None, None]
     hud.width, hud.height = 1920, 1080
     return hud
 
@@ -71,3 +72,31 @@ def test_closing_inventory_returns_held_cursor_stack(monkeypatch):
 
     assert hud.cursor_stack is None
     assert hud.inventory.slots[0] == ItemStack(3, 4)
+
+
+def test_closing_inventory_returns_crafting_grid_contents(monkeypatch):
+    hud = make_hud()
+    hud.crafting_grid[0] = ItemStack(5, 1)  # LOG
+    monkeypatch.setattr(pg.mouse, 'set_visible', lambda *_: None)
+    monkeypatch.setattr(pg.event, 'set_grab', lambda *_: None)
+
+    hud.set_inventory_open(False)
+
+    assert hud.crafting_grid == [None, None, None, None]
+    assert hud.inventory.slots[0] == ItemStack(5, 1)
+
+
+def test_clicking_output_with_a_matched_recipe_collects_it_and_clears_grid(monkeypatch):
+    from blocks import LOG
+
+    hud = make_hud()
+    hud.inventory_open = True
+    hud.crafting_grid[0] = ItemStack(LOG, 1)
+
+    rect = hud._crafting_output_rect()
+    monkeypatch.setattr(pg.mouse, 'get_pos', lambda: rect.center)
+    hud._handle_inventory_click(pg.event.Event(pg.MOUSEBUTTONDOWN, button=1))
+
+    assert hud.crafting_grid == [None, None, None, None]
+    assert hud.cursor_stack is not None
+    assert hud.cursor_stack.block_id != LOG  # planks came out, log went in
