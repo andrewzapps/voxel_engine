@@ -18,7 +18,6 @@ class chunkMesh(baseMesh):
         mesh = build_chunk_mesh(
             chunk_voxels = self.chunk.voxels,
             format_size = self.format_size,
-            chunk_pos=self.chunk.position,
-            world_voxels=self.chunk.world.voxels
+            neighbor_voxels = self.chunk.world.gather_neighbor_voxels(self.chunk.position)
         )
         return mesh

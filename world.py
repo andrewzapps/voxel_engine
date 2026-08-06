@@ -1,38 +1,95 @@
 from settings import *
 from world_objects.chunk import Chunk
-from meshes.chunk_mesh_builder import get_chunk_index
+
+EMPTY_CHUNK_VOXELS = np.zeros(CHUNK_VOL, dtype='uint8')
 
 
 def _local_index(lx, ly, lz):
     return lx + CHUNK_SIZE * lz + CHUNK_AREA * ly
 
 
+def _chunk_coord(wx, wy, wz):
+    return wx // CHUNK_SIZE, wy // CHUNK_SIZE, wz // CHUNK_SIZE
+
+
+def _face_neighbor_coords(coord):
+    cx, cy, cz = coord
+    return (
+        (cx - 1, cy, cz), (cx + 1, cy, cz),
+        (cx, cy - 1, cz), (cx, cy + 1, cz),
+        (cx, cy, cz - 1), (cx, cy, cz + 1),
+    )
+
+
 class World():
     def __init__(self, app):
         self.app = app
-        self.chunks = [None for _ in range(WORLD_VOL)]
-        self.voxels = np.empty([WORLD_VOL, CHUNK_VOL], dtype = 'uint8')
-        self.build_chunks()
-        self.build_chunk_mesh()
+        self.chunks = {}  # (cx, cy, cz) -> Chunk
 
-    def build_chunks(self):
-        for x in range(WORLD_W):
-            for y in range(WORLD_H):
-                for z in range(WORLD_D):
-                    chunk = Chunk(self, position = (x, y, z))
+        #load a full radius around spawn up front so the player has ground to stand on
+        spawn_cx, spawn_cz = int(SPAWN_POINT.x) // CHUNK_SIZE, int(SPAWN_POINT.z) // CHUNK_SIZE
+        for coord in self._coords_in_range(spawn_cx, spawn_cz):
+            self._load_chunk(coord)
+        for chunk in self.chunks.values():
+            chunk.rebuild_mesh()
 
-                    chunk_index = x + WORLD_W * z + WORLD_AREA * y
-                    self.chunks[chunk_index] = chunk 
+    def _coords_in_range(self, center_cx, center_cz):
+        coords = set()
+        r2 = RENDER_DISTANCE * RENDER_DISTANCE
+        for dx in range(-RENDER_DISTANCE, RENDER_DISTANCE + 1):
+            for dz in range(-RENDER_DISTANCE, RENDER_DISTANCE + 1):
+                if dx * dx + dz * dz > r2:
+                    continue
+                for cy in range(WORLD_H):
+                    coords.add((center_cx + dx, cy, center_cz + dz))
+        return coords
 
-                    #put the chunk voxels in a seperate array
-                    self.voxels[chunk_index] = chunk.build_voxels()
+    def _load_chunk(self, coord):
+        chunk = Chunk(self, position=coord)
+        chunk.voxels = chunk.build_voxels()
+        self.chunks[coord] = chunk
 
-                    #get pointer to voxels
-                    chunk.voxels = self.voxels[chunk_index]
+    def _unload_chunk(self, coord):
+        chunk = self.chunks.pop(coord)
+        if chunk.mesh is not None and chunk.mesh.vao is not None:
+            chunk.mesh.vao.release()
 
-    def build_chunk_mesh(self):
-        for chunk in self.chunks:
-            chunk.build_mesh()
+        #neighbours bordering the chunk that just disappeared need their
+        #boundary faces rebuilt now that it's gone
+        for neighbor_coord in _face_neighbor_coords(coord):
+            neighbor = self.chunks.get(neighbor_coord)
+            if neighbor is not None:
+                neighbor.rebuild_mesh()
+
+    def stream_chunks(self):
+        player_pos = self.app.player.position
+        center_cx = int(glm.floor(player_pos.x)) // CHUNK_SIZE
+        center_cz = int(glm.floor(player_pos.z)) // CHUNK_SIZE
+
+        wanted = self._coords_in_range(center_cx, center_cz)
+
+        missing = [coord for coord in wanted if coord not in self.chunks]
+        for coord in missing[:CHUNK_LOAD_BUDGET]:
+            self._load_chunk(coord)
+            self.chunks[coord].rebuild_mesh()
+            for neighbor_coord in _face_neighbor_coords(coord):
+                neighbor = self.chunks.get(neighbor_coord)
+                if neighbor is not None:
+                    neighbor.rebuild_mesh()
+
+        for coord in [c for c in self.chunks if c not in wanted]:
+            self._unload_chunk(coord)
+
+    def gather_neighbor_voxels(self, coord):
+        cx, cy, cz = coord
+        neighbors = np.empty((27, CHUNK_VOL), dtype='uint8')
+        for dz in (-1, 0, 1):
+            for dy in (-1, 0, 1):
+                for dx in (-1, 0, 1):
+                    slot = (dx + 1) + (dy + 1) * 3 + (dz + 1) * 9
+                    neighbor = self.chunks.get((cx + dx, cy + dy, cz + dz))
+                    neighbors[slot] = neighbor.voxels if neighbor is not None else EMPTY_CHUNK_VOXELS
+        return neighbors
 
     def is_solid(self, wx, wy, wz):
         return self.get_voxel(wx, wy, wz) != 0
@@ -70,19 +127,19 @@ class World():
         return top
 
     def get_voxel(self, wx, wy, wz):
-        chunk_index = get_chunk_index((wx, wy, wz))
-        if chunk_index == -1:
+        chunk = self.chunks.get(_chunk_coord(wx, wy, wz))
+        if chunk is None:
             return 0
         lx, ly, lz = wx % CHUNK_SIZE, wy % CHUNK_SIZE, wz % CHUNK_SIZE
-        return self.voxels[chunk_index][_local_index(lx, ly, lz)]
+        return chunk.voxels[_local_index(lx, ly, lz)]
 
     def set_voxel(self, wx, wy, wz, voxel_id):
-        chunk_index = get_chunk_index((wx, wy, wz))
-        if chunk_index == -1:
+        chunk = self.chunks.get(_chunk_coord(wx, wy, wz))
+        if chunk is None:
             return False
 
         lx, ly, lz = wx % CHUNK_SIZE, wy % CHUNK_SIZE, wz % CHUNK_SIZE
-        self.voxels[chunk_index][_local_index(lx, ly, lz)] = voxel_id
+        chunk.voxels[_local_index(lx, ly, lz)] = voxel_id
         self.rebuild_chunks_around(wx, wy, wz)
         return True
 
@@ -91,28 +148,29 @@ class World():
 
     def rebuild_chunks_around(self, wx, wy, wz):
         lx, ly, lz = wx % CHUNK_SIZE, wy % CHUNK_SIZE, wz % CHUNK_SIZE
-        indices = {get_chunk_index((wx, wy, wz))}
+        coords = {_chunk_coord(wx, wy, wz)}
 
         if lx == 0:
-            indices.add(get_chunk_index((wx - 1, wy, wz)))
+            coords.add(_chunk_coord(wx - 1, wy, wz))
         if lx == CHUNK_SIZE - 1:
-            indices.add(get_chunk_index((wx + 1, wy, wz)))
+            coords.add(_chunk_coord(wx + 1, wy, wz))
         if ly == 0:
-            indices.add(get_chunk_index((wx, wy - 1, wz)))
+            coords.add(_chunk_coord(wx, wy - 1, wz))
         if ly == CHUNK_SIZE - 1:
-            indices.add(get_chunk_index((wx, wy + 1, wz)))
+            coords.add(_chunk_coord(wx, wy + 1, wz))
         if lz == 0:
-            indices.add(get_chunk_index((wx, wy, wz - 1)))
+            coords.add(_chunk_coord(wx, wy, wz - 1))
         if lz == CHUNK_SIZE - 1:
-            indices.add(get_chunk_index((wx, wy, wz + 1)))
+            coords.add(_chunk_coord(wx, wy, wz + 1))
 
-        for chunk_index in indices:
-            if chunk_index >= 0:
-                self.chunks[chunk_index].rebuild_mesh()
+        for coord in coords:
+            chunk = self.chunks.get(coord)
+            if chunk is not None:
+                chunk.rebuild_mesh()
 
     def update(self):
-        pass
+        self.stream_chunks()
 
     def render(self):
-        for chunk in self.chunks:
+        for chunk in self.chunks.values():
             chunk.render()

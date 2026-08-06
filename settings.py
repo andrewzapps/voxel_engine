@@ -12,15 +12,13 @@ H_CHUNK_SIZE = CHUNK_SIZE // 2
 CHUNK_AREA = CHUNK_SIZE * CHUNK_SIZE
 CHUNK_VOL = CHUNK_AREA * CHUNK_SIZE
 
-#world
-WORLD_W, WORLD_H = 10, 3
-WORLD_D = WORLD_W 
-WORLD_AREA = WORLD_W * WORLD_D 
-WORLD_VOL = WORLD_AREA * WORLD_H
+#world - height is capped like real minecraft, but x/z stream in around the player forever
+WORLD_H = 3
+RENDER_DISTANCE = 6  # chunks, horizontal
+CHUNK_LOAD_BUDGET = 4  # new chunks generated per frame so movement doesn't stutter
 
-#world center
-CENTER_XZ = WORLD_W * H_CHUNK_SIZE 
-CENTER_Y = WORLD_H * H_CHUNK_SIZE
+#spawn near the middle of chunk (0, *, 0)
+CENTER_XZ = H_CHUNK_SIZE
 
 #camera
 ASPECT_RATIO = WIN_RES.x / WIN_RES.y
