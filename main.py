@@ -1,6 +1,7 @@
-from settings import * 
+from settings import *
 import moderngl as mgl
 import pygame as pg
+import random
 import sys
 from shader_program import shaderProgram
 from scene import Scene
@@ -8,6 +9,8 @@ from player import Player
 from textures import Textures
 from voxel_handler import VoxelHandler
 from hud import HUD
+import world_gen
+from save import load_world, save_world
 
 class voxelEngine:
     def __init__(self):
@@ -46,10 +49,28 @@ class voxelEngine:
     def on_init(self):
         self.textures = Textures(self)
         self.shader_program = shaderProgram(self)
+
+        self.save_data = load_world()
+        self.seed = self.save_data['seed'] if self.save_data else random.randint(0, 1_000_000)
+        world_gen.set_seed(self.seed)
+
         self.scene = Scene(self)
-        self.player = Player(self)
+
+        if self.save_data and self.save_data.get('player'):
+            saved_player = self.save_data['player']
+            self.player = Player(
+                self,
+                position=glm.vec3(*saved_player['position']),
+                yaw=saved_player['yaw'],
+                pitch=saved_player['pitch'],
+            )
+        else:
+            self.player = Player(self)
+
         self.voxel_handler = VoxelHandler(self)
         self.hud = HUD(self)
+        if self.save_data:
+            self.hud.selected_slot = self.save_data.get('hotbar_slot', 0)
 
     def update(self):
         self.delta_time = min(self.clock.tick(), 50)
@@ -82,6 +103,7 @@ class voxelEngine:
             self.handle_events()
             self.update()
             self.render()
+        save_world(self.scene.world, self.player, self.hud, self.seed)
         pg.quit()
         sys.exit()
 

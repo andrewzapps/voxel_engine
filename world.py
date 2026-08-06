@@ -26,6 +26,12 @@ class World():
         self.app = app
         self.chunks = {}  # (cx, cy, cz) -> Chunk
 
+        #(wx, wy, wz) -> voxel_id for every block the player has broken or
+        #placed - terrain itself is regenerated from the seed, only edits
+        #away from that generated shape need to be remembered
+        save_data = getattr(app, 'save_data', None)
+        self.edits = dict(save_data['edits']) if save_data else {}
+
         #load a full radius around spawn up front so the player has ground to stand on
         spawn_cx, spawn_cz = int(SPAWN_POINT.x) // CHUNK_SIZE, int(SPAWN_POINT.z) // CHUNK_SIZE
         for coord in self._coords_in_range(spawn_cx, spawn_cz):
@@ -47,7 +53,20 @@ class World():
     def _load_chunk(self, coord):
         chunk = Chunk(self, position=coord)
         chunk.voxels = chunk.build_voxels()
+        self._apply_edits(chunk, coord)
         self.chunks[coord] = chunk
+
+    def _apply_edits(self, chunk, coord):
+        if not self.edits:
+            return
+        cx, cy, cz = coord
+        base_x, base_y, base_z = cx * CHUNK_SIZE, cy * CHUNK_SIZE, cz * CHUNK_SIZE
+        for (wx, wy, wz), voxel_id in self.edits.items():
+            if (base_x <= wx < base_x + CHUNK_SIZE and
+                    base_y <= wy < base_y + CHUNK_SIZE and
+                    base_z <= wz < base_z + CHUNK_SIZE):
+                lx, ly, lz = wx - base_x, wy - base_y, wz - base_z
+                chunk.voxels[_local_index(lx, ly, lz)] = voxel_id
 
     def _unload_chunk(self, coord):
         chunk = self.chunks.pop(coord)
@@ -140,6 +159,7 @@ class World():
 
         lx, ly, lz = wx % CHUNK_SIZE, wy % CHUNK_SIZE, wz % CHUNK_SIZE
         chunk.voxels[_local_index(lx, ly, lz)] = voxel_id
+        self.edits[(wx, wy, wz)] = int(voxel_id)
         self.rebuild_chunks_around(wx, wy, wz)
         return True
 

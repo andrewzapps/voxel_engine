@@ -1,6 +1,15 @@
 from settings import *
 from blocks import COAL_ORE, IRON_ORE
 
+#shifts every noise sample by a fixed offset so different saves get
+#different worlds instead of the same terrain every time
+_seed_offset = 0.0
+
+
+def set_seed(seed):
+    global _seed_offset
+    _seed_offset = (seed % 100000) + 0.0
+
 #terrain shape - a few octaves of simplex stacked together (fbm) so hills
 #have both big rolling shape and smaller bumps, instead of one smooth wave
 OCTAVES = 3
@@ -39,11 +48,12 @@ IRON_THRESHOLD = 0.90
 
 
 def terrain_height(wx, wz):
+    sx, sz = wx + _seed_offset, wz + _seed_offset
     height = 0.0
     amplitude = BASE_AMPLITUDE
     frequency = BASE_FREQUENCY
     for _ in range(OCTAVES):
-        height += glm.simplex(glm.vec2(wx, wz) * frequency) * amplitude
+        height += glm.simplex(glm.vec2(sx, sz) * frequency) * amplitude
         amplitude *= PERSISTENCE
         frequency *= LACUNARITY
     return int(height + HEIGHT_OFFSET)
@@ -53,12 +63,13 @@ def cave_column(wx, wz, surface_height):
     #called once per (x, z) column - returns whether this column has a
     #tunnel running through it and where, so the y loop can do a cheap
     #range check instead of more noise calls
-    chance = glm.simplex(glm.vec2(wx, wz) * CAVE_CHANCE_FREQUENCY)
+    sx, sz = wx + _seed_offset, wz + _seed_offset
+    chance = glm.simplex(glm.vec2(sx, sz) * CAVE_CHANCE_FREQUENCY)
     if chance < CAVE_CHANCE_THRESHOLD:
         return False, 0, 0
 
-    center = glm.simplex(glm.vec2(wx, wz) * CAVE_FREQUENCY) * 10 + surface_height * 0.4
-    width = 2 + glm.simplex(glm.vec2(wx + 500, wz + 500) * CAVE_WIDTH_FREQUENCY) * 2
+    center = glm.simplex(glm.vec2(sx, sz) * CAVE_FREQUENCY) * 10 + surface_height * 0.4
+    width = 2 + glm.simplex(glm.vec2(sx + 500, sz + 500) * CAVE_WIDTH_FREQUENCY) * 2
     return True, center, width
 
 
@@ -75,9 +86,9 @@ def ore_id(wx, wy, wz, surface_height, cache):
 
     #snap to a coarse grid and memoize so a whole little block of stone
     #shares one noise sample instead of paying for one per voxel
-    bx = wx // ORE_BLOCK_SIZE
+    bx = int((wx + _seed_offset) // ORE_BLOCK_SIZE)
     by = wy // ORE_BLOCK_SIZE
-    bz = wz // ORE_BLOCK_SIZE
+    bz = int((wz + _seed_offset) // ORE_BLOCK_SIZE)
 
     if depth >= IRON_MIN_DEPTH and wy <= IRON_MAX_HEIGHT:
         key = ('iron', bx, by, bz)
