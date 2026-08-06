@@ -1,4 +1,6 @@
-from settings import CHUNK_SIZE
+import numpy as np
+
+from settings import CHUNK_SIZE, CHUNK_VOL
 from world import World
 
 
@@ -11,6 +13,7 @@ def make_world_with_edits(edits):
     world.app = StubApp()
     world.chunks = {}
     world.edits = edits
+    world.light_sources = {}
     return world
 
 
@@ -19,7 +22,12 @@ def test_set_voxel_records_an_edit(monkeypatch):
 
     class StubChunk:
         def __init__(self):
-            self.voxels = [0] * (CHUNK_SIZE ** 3)
+            self.voxels = np.zeros(CHUNK_VOL, dtype='uint8')
+            self.sky_light = np.zeros(CHUNK_VOL, dtype='uint8')
+            self.block_light = np.zeros(CHUNK_VOL, dtype='uint8')
+
+        def rebuild_mesh(self):
+            pass
 
     chunk = StubChunk()
     world.chunks[(0, 0, 0)] = chunk

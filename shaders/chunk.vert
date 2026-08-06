@@ -1,6 +1,7 @@
 #version 330 core
 
 layout (location = 0) in uint packed_data;
+layout (location = 1) in uint light_data;
 
 int x, y, z;
 int voxel_id;
@@ -15,6 +16,9 @@ uniform mat4 m_model;
 //texture atlas: voxel_id * 6 + face_id -> tile index in a u_atlas_cols wide grid
 uniform int u_block_tiles[384];
 uniform int u_atlas_cols;
+
+//0..1, how much outdoor sky light actually counts right now - see lighting.py
+uniform float u_day_factor;
 
 out vec2 uv;
 out float shading;
@@ -74,6 +78,10 @@ void main()
     vec2 tile_origin = vec2(tile % u_atlas_cols, tile / u_atlas_cols);
     uv = (tile_origin + corner_uv) / float(u_atlas_cols);
 
-    shading = face_shading[face_id] * ao_values[ao_id];
+    uint sky_light = light_data & 0xFFu;
+    uint block_light = (light_data >> 8) & 0xFFu;
+    float light = max(float(block_light) / 15.0, (float(sky_light) / 15.0) * u_day_factor);
+
+    shading = face_shading[face_id] * ao_values[ao_id] * light;
     gl_Position = m_proj * m_view * m_model * vec4(in_position, 1.0);
 }

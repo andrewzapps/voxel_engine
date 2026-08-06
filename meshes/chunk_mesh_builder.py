@@ -1,5 +1,5 @@
 from settings import *
-from numba import uint8
+from numba import uint32
 
 #neighbor_voxels is always the 27 chunks in a 3x3x3 block centered on the chunk
 #being meshed (index 13), gathered by World.gather_neighbor_voxels each rebuild.
@@ -24,6 +24,23 @@ def is_void(local_pos, neighbor_voxels):
     if chunk_voxels[voxel_index]:
         return False
     return True
+
+
+@njit
+def get_light(local_pos, neighbor_sky_light, neighbor_block_light):
+    #a whole face shares one light value - sampled from the same void voxel
+    #just outside it, the same spot is_void already checked
+    x, y, z = local_pos
+    slot = get_neighbor_slot(x, y, z)
+    lx, ly, lz = x % CHUNK_SIZE, y % CHUNK_SIZE, z % CHUNK_SIZE
+    voxel_index = lx + CHUNK_SIZE * lz + CHUNK_AREA * ly
+
+    sky = neighbor_sky_light[slot][voxel_index]
+    block = neighbor_block_light[slot][voxel_index]
+    #numba widens the shift result on its own, so force it back down to
+    #uint32 - it has to match pack_data's return type exactly, since
+    #add_data interleaves the two into one star-args tuple
+    return uint32(uint32(sky) | (uint32(block) << 8))
 
 
 @njit
@@ -84,7 +101,9 @@ def pack_data(x, y, z, voxel_id, face_id, ao_id, flip_id):
         e << fg_bit |
         f << g_bit | g
     )
-    return packed_data
+    #cast to match get_light's return type - add_data interleaves the two,
+    #and numba needs a homogeneous type to iterate the star-args tuple
+    return uint32(packed_data)
 
 
 @njit
@@ -95,7 +114,7 @@ def add_data(vertex_data, index, *vertices):
     return index
 
 @njit
-def build_chunk_mesh(chunk_voxels, format_size, neighbor_voxels):
+def build_chunk_mesh(chunk_voxels, format_size, neighbor_voxels, neighbor_sky_light, neighbor_block_light):
     vertex_data = np.empty(CHUNK_VOL * 18 * format_size, dtype = 'uint32')
     index = 0
 
@@ -111,6 +130,7 @@ def build_chunk_mesh(chunk_voxels, format_size, neighbor_voxels):
                     #get ao values
                     ao = get_ao((x, y + 1, z), neighbor_voxels, plane = 'Y')
                     flip_id = ao[1] + ao[3] > ao[0] + ao[2]
+                    light = get_light((x, y + 1, z), neighbor_sky_light, neighbor_block_light)
 
                     #format: x, y, z, voxel_id, face_id, ao_id
                     v0 = pack_data(x    , y + 1, z    , voxel_id, 0, ao[0], flip_id)
@@ -120,14 +140,15 @@ def build_chunk_mesh(chunk_voxels, format_size, neighbor_voxels):
 
                     #flip triangle vertices for each face
                     if flip_id:
-                        index = add_data(vertex_data, index, v1, v0, v3, v1, v3, v2)
+                        index = add_data(vertex_data, index, v1, light, v0, light, v3, light, v1, light, v3, light, v2, light)
                     else:
-                        index = add_data(vertex_data, index, v0, v3, v2, v0, v2, v1)
+                        index = add_data(vertex_data, index, v0, light, v3, light, v2, light, v0, light, v2, light, v1, light)
 
                 #bottom face
                 if is_void((x, y - 1, z), neighbor_voxels):
                     ao = get_ao((x, y - 1, z), neighbor_voxels, plane = 'Y')
                     flip_id = ao[1] + ao[3] > ao[0] + ao[2]
+                    light = get_light((x, y - 1, z), neighbor_sky_light, neighbor_block_light)
 
                     v0 = pack_data(x    , y, z    , voxel_id, 1, ao[0], flip_id)
                     v1 = pack_data(x + 1, y, z    , voxel_id, 1, ao[1], flip_id)
@@ -135,14 +156,15 @@ def build_chunk_mesh(chunk_voxels, format_size, neighbor_voxels):
                     v3 = pack_data(x    , y, z + 1, voxel_id, 1, ao[3], flip_id)
 
                     if flip_id:
-                        index = add_data(vertex_data, index, v1, v3, v0, v1, v2, v3)
+                        index = add_data(vertex_data, index, v1, light, v3, light, v0, light, v1, light, v2, light, v3, light)
                     else:
-                        index = add_data(vertex_data, index, v0, v2, v3, v0, v1, v2)
+                        index = add_data(vertex_data, index, v0, light, v2, light, v3, light, v0, light, v1, light, v2, light)
 
                 #right face
                 if is_void((x + 1, y, z), neighbor_voxels):
                     ao = get_ao((x + 1, y, z), neighbor_voxels, plane = 'X')
                     flip_id = ao[1] + ao[3] > ao[0] + ao[2]
+                    light = get_light((x + 1, y, z), neighbor_sky_light, neighbor_block_light)
 
                     v0 = pack_data(x + 1, y    , z    , voxel_id, 2, ao[0], flip_id)
                     v1 = pack_data(x + 1, y + 1, z    , voxel_id, 2, ao[1], flip_id)
@@ -150,14 +172,15 @@ def build_chunk_mesh(chunk_voxels, format_size, neighbor_voxels):
                     v3 = pack_data(x + 1, y    , z + 1, voxel_id, 2, ao[3], flip_id)
 
                     if flip_id:
-                        index = add_data(vertex_data, index, v3, v0, v1, v3, v1, v2)
+                        index = add_data(vertex_data, index, v3, light, v0, light, v1, light, v3, light, v1, light, v2, light)
                     else:
-                        index = add_data(vertex_data, index, v0, v1, v2, v0, v2, v3)
+                        index = add_data(vertex_data, index, v0, light, v1, light, v2, light, v0, light, v2, light, v3, light)
 
                 #left face
                 if is_void((x - 1, y, z), neighbor_voxels):
                     ao = get_ao((x - 1, y, z), neighbor_voxels, plane = 'X')
                     flip_id = ao[1] + ao[3] > ao[0] + ao[2]
+                    light = get_light((x - 1, y, z), neighbor_sky_light, neighbor_block_light)
 
                     v0 = pack_data(x, y    , z    , voxel_id, 3, ao[0], flip_id)
                     v1 = pack_data(x, y + 1, z    , voxel_id, 3, ao[1], flip_id)
@@ -165,14 +188,15 @@ def build_chunk_mesh(chunk_voxels, format_size, neighbor_voxels):
                     v3 = pack_data(x, y    , z + 1, voxel_id, 3, ao[3], flip_id)
 
                     if flip_id:
-                        index = add_data(vertex_data, index, v3, v1, v0, v3, v2, v1)
+                        index = add_data(vertex_data, index, v3, light, v1, light, v0, light, v3, light, v2, light, v1, light)
                     else:
-                        index = add_data(vertex_data, index, v0, v2, v1, v0, v3, v2)
+                        index = add_data(vertex_data, index, v0, light, v2, light, v1, light, v0, light, v3, light, v2, light)
 
                 #back face
                 if is_void((x, y, z - 1), neighbor_voxels):
                     ao = get_ao((x, y, z - 1), neighbor_voxels, plane = 'Z')
                     flip_id = ao[1] + ao[3] > ao[0] + ao[2]
+                    light = get_light((x, y, z - 1), neighbor_sky_light, neighbor_block_light)
 
                     v0 = pack_data(x    , y    , z, voxel_id, 4, ao[0], flip_id)
                     v1 = pack_data(x    , y + 1, z, voxel_id, 4, ao[1], flip_id)
@@ -180,14 +204,15 @@ def build_chunk_mesh(chunk_voxels, format_size, neighbor_voxels):
                     v3 = pack_data(x + 1, y    , z, voxel_id, 4, ao[3], flip_id)
 
                     if flip_id:
-                        index = add_data(vertex_data, index, v3, v0, v1, v3, v1, v2)
+                        index = add_data(vertex_data, index, v3, light, v0, light, v1, light, v3, light, v1, light, v2, light)
                     else:
-                        index = add_data(vertex_data, index, v0, v1, v2, v0, v2, v3)
+                        index = add_data(vertex_data, index, v0, light, v1, light, v2, light, v0, light, v2, light, v3, light)
 
                 #front face
                 if is_void((x, y, z + 1), neighbor_voxels):
                     ao = get_ao((x, y, z + 1), neighbor_voxels, plane = 'Z')
                     flip_id = ao[1] + ao[3] > ao[0] + ao[2]
+                    light = get_light((x, y, z + 1), neighbor_sky_light, neighbor_block_light)
 
                     v0 = pack_data(x    , y    , z + 1, voxel_id, 5, ao[0], flip_id)
                     v1 = pack_data(x    , y + 1, z + 1, voxel_id, 5, ao[1], flip_id)
@@ -195,8 +220,8 @@ def build_chunk_mesh(chunk_voxels, format_size, neighbor_voxels):
                     v3 = pack_data(x + 1, y    , z + 1, voxel_id, 5, ao[3], flip_id)
 
                     if flip_id:
-                        index = add_data(vertex_data, index, v3, v1, v0, v3, v2, v1)
+                        index = add_data(vertex_data, index, v3, light, v1, light, v0, light, v3, light, v2, light, v1, light)
                     else:
-                        index = add_data(vertex_data, index, v0, v2, v1, v0, v3, v2)
+                        index = add_data(vertex_data, index, v0, light, v2, light, v1, light, v0, light, v3, light, v2, light)
 
     return vertex_data[:index]

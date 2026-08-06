@@ -1,4 +1,6 @@
 from settings import *
+from blocks import BLOCK_TYPES
+from lighting import MAX_LIGHT, propagate_block_light
 from world_objects.chunk import Chunk
 
 EMPTY_CHUNK_VOXELS = np.zeros(CHUNK_VOL, dtype='uint8')
@@ -32,12 +34,23 @@ class World():
         save_data = getattr(app, 'save_data', None)
         self.edits = dict(save_data['edits']) if save_data else {}
 
+        #(wx, wy, wz) -> light level, rebuilt from edits rather than saved
+        #separately - any placed block that glows is already in self.edits
+        self.light_sources = {
+            pos: BLOCK_TYPES[voxel_id].light_level
+            for pos, voxel_id in self.edits.items()
+            if voxel_id in BLOCK_TYPES and BLOCK_TYPES[voxel_id].light_level > 0
+        }
+
         #load a full radius around spawn up front so the player has ground to stand on
         spawn_cx, spawn_cz = int(SPAWN_POINT.x) // CHUNK_SIZE, int(SPAWN_POINT.z) // CHUNK_SIZE
         for coord in self._coords_in_range(spawn_cx, spawn_cz):
             self._load_chunk(coord)
         for chunk in self.chunks.values():
             chunk.rebuild_mesh()
+
+        if self.light_sources:
+            self.recompute_lighting()
 
     def _coords_in_range(self, center_cx, center_cz):
         coords = set()
@@ -55,6 +68,11 @@ class World():
         chunk.voxels = chunk.build_voxels()
         self._apply_edits(chunk, coord)
         self.chunks[coord] = chunk
+
+        #a chunk streaming in next to an already-lit torch needs its block
+        #light filled in too, not just newly-placed torches
+        if self.light_sources and self._chunk_near_any_light_source(coord):
+            self.recompute_lighting()
 
     def _apply_edits(self, chunk, coord):
         if not self.edits:
@@ -111,7 +129,11 @@ class World():
         return neighbors
 
     def is_solid(self, wx, wy, wz):
-        return self.get_voxel(wx, wy, wz) != 0
+        voxel_id = int(self.get_voxel(wx, wy, wz))
+        if voxel_id == 0:
+            return False
+        block = BLOCK_TYPES.get(voxel_id)
+        return block.solid if block is not None else True
 
     def collides_aabb(self, min_pos, max_pos):
         min_x = int(glm.floor(min_pos.x))
@@ -157,11 +179,135 @@ class World():
         if chunk is None:
             return False
 
+        old_voxel_id = int(self.get_voxel(wx, wy, wz))
         lx, ly, lz = wx % CHUNK_SIZE, wy % CHUNK_SIZE, wz % CHUNK_SIZE
         chunk.voxels[_local_index(lx, ly, lz)] = voxel_id
         self.edits[(wx, wy, wz)] = int(voxel_id)
+
+        self._update_light_sources(wx, wy, wz, old_voxel_id, int(voxel_id))
+        self._update_sky_light_column(wx, wz)
         self.rebuild_chunks_around(wx, wy, wz)
         return True
+
+    def _light_level_of(self, voxel_id):
+        block = BLOCK_TYPES.get(voxel_id)
+        return block.light_level if block is not None else 0
+
+    def _update_light_sources(self, wx, wy, wz, old_voxel_id, new_voxel_id):
+        new_level = self._light_level_of(new_voxel_id)
+        pos = (wx, wy, wz)
+
+        source_changed = False
+        if new_level > 0:
+            if self.light_sources.get(pos) != new_level:
+                self.light_sources[pos] = new_level
+                source_changed = True
+        elif pos in self.light_sources:
+            del self.light_sources[pos]
+            source_changed = True
+
+        #placing/removing a solid block near an existing light can also
+        #open or close off where that light reaches, not just the source itself
+        if source_changed or self._near_any_light_source(wx, wy, wz):
+            self.recompute_lighting()
+
+    def _near_any_light_source(self, wx, wy, wz):
+        for (sx, sy, sz), level in self.light_sources.items():
+            if abs(sx - wx) <= level and abs(sy - wy) <= level and abs(sz - wz) <= level:
+                return True
+        return False
+
+    def _chunk_near_any_light_source(self, coord):
+        cx, cy, cz = coord
+        base_x, base_y, base_z = cx * CHUNK_SIZE, cy * CHUNK_SIZE, cz * CHUNK_SIZE
+        for (sx, sy, sz), level in self.light_sources.items():
+            if (base_x - level <= sx <= base_x + CHUNK_SIZE + level and
+                    base_y - level <= sy <= base_y + CHUNK_SIZE + level and
+                    base_z - level <= sz <= base_z + CHUNK_SIZE + level):
+                return True
+        return False
+
+    def _update_sky_light_column(self, wx, wz):
+        top_y = WORLD_H * CHUNK_SIZE - 1
+        exposed = True
+        changed_chunks = set()
+
+        for wy in range(top_y, -1, -1):
+            coord = _chunk_coord(wx, wy, wz)
+            chunk = self.chunks.get(coord)
+            if chunk is None:
+                continue
+
+            lx, ly, lz = wx % CHUNK_SIZE, wy % CHUNK_SIZE, wz % CHUNK_SIZE
+            idx = _local_index(lx, ly, lz)
+            is_solid_here = chunk.voxels[idx] != 0
+
+            new_value = MAX_LIGHT if (exposed and not is_solid_here) else 0
+            if is_solid_here:
+                exposed = False
+
+            if chunk.sky_light[idx] != new_value:
+                chunk.sky_light[idx] = new_value
+                changed_chunks.add(coord)
+
+        for coord in changed_chunks:
+            self.chunks[coord].rebuild_mesh()
+
+    def get_block_light(self, wx, wy, wz):
+        chunk = self.chunks.get(_chunk_coord(wx, wy, wz))
+        if chunk is None:
+            return 0
+        lx, ly, lz = wx % CHUNK_SIZE, wy % CHUNK_SIZE, wz % CHUNK_SIZE
+        return chunk.block_light[_local_index(lx, ly, lz)]
+
+    def set_block_light(self, wx, wy, wz, level):
+        chunk = self.chunks.get(_chunk_coord(wx, wy, wz))
+        if chunk is None:
+            return False
+        lx, ly, lz = wx % CHUNK_SIZE, wy % CHUNK_SIZE, wz % CHUNK_SIZE
+        idx = _local_index(lx, ly, lz)
+        if chunk.block_light[idx] >= level:
+            return False
+        chunk.block_light[idx] = level
+        return True
+
+    def recompute_lighting(self):
+        #simplest correct approach: clear every loaded chunk's block light
+        #and re-run the flood fill from every known source, rather than
+        #trying to incrementally "unlight" what a removed torch used to
+        #reach. only runs on edits near a light, not every frame.
+        old_light = {coord: chunk.block_light.copy() for coord, chunk in self.chunks.items()}
+
+        for chunk in self.chunks.values():
+            chunk.block_light.fill(0)
+
+        sources = [(sx, sy, sz, level) for (sx, sy, sz), level in self.light_sources.items()]
+        propagate_block_light(self, sources)
+
+        for coord, chunk in self.chunks.items():
+            if not np.array_equal(old_light[coord], chunk.block_light):
+                chunk.rebuild_mesh()
+
+    def gather_neighbor_light(self, coord):
+        cx, cy, cz = coord
+        sky = np.empty((27, CHUNK_VOL), dtype='uint8')
+        block = np.empty((27, CHUNK_VOL), dtype='uint8')
+
+        for dz in (-1, 0, 1):
+            for dy in (-1, 0, 1):
+                for dx in (-1, 0, 1):
+                    slot = (dx + 1) + (dy + 1) * 3 + (dz + 1) * 9
+                    neighbor = self.chunks.get((cx + dx, cy + dy, cz + dz))
+                    if neighbor is not None:
+                        sky[slot] = neighbor.sky_light
+                        block[slot] = neighbor.block_light
+                    else:
+                        #above the world's height cap is still open sky even
+                        #though there's no chunk loaded up there
+                        sky[slot] = MAX_LIGHT if (cy + dy) >= WORLD_H else 0
+                        block[slot] = 0
+
+        return sky, block
 
     def remove_voxel(self, wx, wy, wz):
         return self.set_voxel(wx, wy, wz, 0)

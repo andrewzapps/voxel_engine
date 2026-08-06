@@ -1,5 +1,6 @@
 from settings import *
 from blocks import ATLAS_COLS, build_tile_table
+from lighting import day_factor
 
 class shaderProgram:
     def __init__(self, app):
@@ -19,9 +20,11 @@ class shaderProgram:
         self.chunk['u_texture_0'] = 0
         self.chunk['u_atlas_cols'] = ATLAS_COLS
         self.chunk['u_block_tiles'].value = build_tile_table()
+        self.chunk['u_day_factor'] = 1.0
 
     def update(self):
         self.chunk['m_view'].write(self.app.player.m_view)
+        self.chunk['u_day_factor'] = day_factor(self.app.time)
 
     def get_program(self, shader_name):
         with open(f'shaders/{shader_name}.vert') as file:

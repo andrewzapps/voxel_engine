@@ -11,6 +11,7 @@ from voxel_handler import VoxelHandler
 from hud import HUD
 import world_gen
 from save import load_world, save_world
+from lighting import sky_color
 
 class voxelEngine:
     def __init__(self):
@@ -86,7 +87,8 @@ class voxelEngine:
         pg.display.set_caption(f'{self.clock.get_fps() :.0f}')
 
     def render(self):
-        self.ctx.clear(color = BG_COLOR)
+        sky = sky_color(self.time)
+        self.ctx.clear(color = (sky.x, sky.y, sky.z))
         self.scene.render()
         self.voxel_handler.render()
         self.hud.render()

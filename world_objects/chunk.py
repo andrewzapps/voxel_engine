@@ -1,5 +1,6 @@
 from settings import *
 from blocks import GRASS, DIRT, SAND, STONE
+from lighting import sky_light_column
 from meshes.chunk_mesh import chunkMesh
 from world_gen import cave_column, is_cave_voxel, ore_id, terrain_height, SAND_LEVEL
 
@@ -10,6 +11,8 @@ class Chunk:
         self.position = position
         self.m_model = self.get_model_matrix()
         self.voxels: np.array = None
+        self.sky_light: np.array = None
+        self.block_light: np.array = None
         self.mesh: chunkMesh = None
         self.is_empty = True
 
@@ -41,6 +44,7 @@ class Chunk:
     def build_voxels(self):
         #empty chunk
         voxels = np.zeros(CHUNK_VOL, dtype = 'uint8')
+        sky_light = np.zeros(CHUNK_VOL, dtype = 'uint8')
 
         #fill chunk
 
@@ -55,6 +59,10 @@ class Chunk:
                 local_height = min(world_height - cy, CHUNK_SIZE)
                 cave_active, cave_center, cave_width = cave_column(wx, wz, world_height)
                 beach = world_height - 1 <= SAND_LEVEL
+
+                column_sky_light = sky_light_column(world_height, cy)
+                for y in range(CHUNK_SIZE):
+                    sky_light[x + CHUNK_SIZE * z + CHUNK_AREA * y] = column_sky_light[y]
 
                 for y in range(max(0, local_height)):
                     wy = y + cy
@@ -74,5 +82,7 @@ class Chunk:
         if np.any(voxels):
             self.is_empty = False
 
+        self.sky_light = sky_light
+        self.block_light = np.zeros(CHUNK_VOL, dtype = 'uint8')
 
         return voxels

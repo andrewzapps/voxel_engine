@@ -32,10 +32,11 @@ class BlockType:
     side: int
     bottom: int
     solid: bool = True
+    light_level: int = 0  # how brightly this block itself glows, 0-15
 
 
-def _uniform(block_id, name, tile, solid=True):
-    return BlockType(block_id, name, top=tile, side=tile, bottom=tile, solid=solid)
+def _uniform(block_id, name, tile, solid=True, light_level=0):
+    return BlockType(block_id, name, top=tile, side=tile, bottom=tile, solid=solid, light_level=light_level)
 
 
 BLOCK_TYPES = {
@@ -51,7 +52,7 @@ BLOCK_TYPES = {
     IRON_ORE: _uniform(IRON_ORE, 'iron ore', 11),
     GLASS: _uniform(GLASS, 'glass', 12),
     WATER: _uniform(WATER, 'water', 13, solid=False),
-    TORCH: _uniform(TORCH, 'torch', 14, solid=False),
+    TORCH: _uniform(TORCH, 'torch', 14, solid=False, light_level=14),
     CRAFTING_TABLE: _uniform(CRAFTING_TABLE, 'crafting table', 15),
 }
 
