@@ -1,5 +1,6 @@
 from settings import *
 from numba import uint32
+from blocks import GLASS, WATER
 
 #neighbor_voxels is always the 27 chunks in a 3x3x3 block centered on the chunk
 #being meshed (index 13), gathered by World.gather_neighbor_voxels each rebuild.
@@ -24,6 +25,30 @@ def is_void(local_pos, neighbor_voxels):
     if chunk_voxels[voxel_index]:
         return False
     return True
+
+
+@njit
+def get_neighbor_voxel_id(local_pos, neighbor_voxels):
+    x, y, z = local_pos
+    chunk_voxels = neighbor_voxels[get_neighbor_slot(x, y, z)]
+
+    lx, ly, lz = x % CHUNK_SIZE, y % CHUNK_SIZE, z % CHUNK_SIZE
+    voxel_index = lx + CHUNK_SIZE * lz + CHUNK_AREA * ly
+    return chunk_voxels[voxel_index]
+
+
+@njit
+def is_transparent(voxel_id):
+    return voxel_id == WATER or voxel_id == GLASS
+
+
+@njit
+def should_render_face(voxel_id, neighbor_id):
+    if is_transparent(voxel_id):
+        #don't draw the wall between two water/glass blocks of the same kind
+        return neighbor_id != voxel_id
+    #an opaque block's face shows through air and through transparent blocks
+    return neighbor_id == 0 or is_transparent(neighbor_id)
 
 
 @njit
@@ -115,8 +140,12 @@ def add_data(vertex_data, index, *vertices):
 
 @njit
 def build_chunk_mesh(chunk_voxels, format_size, neighbor_voxels, neighbor_sky_light, neighbor_block_light):
+    #opaque and water/glass faces go into separate buffers - they're drawn
+    #in separate passes so water can blend without writing depth
     vertex_data = np.empty(CHUNK_VOL * 18 * format_size, dtype = 'uint32')
+    water_data = np.empty(CHUNK_VOL * 18 * format_size, dtype = 'uint32')
     index = 0
+    water_index = 0
 
     for x in range(CHUNK_SIZE):
         for y in range(CHUNK_SIZE):
@@ -125,8 +154,11 @@ def build_chunk_mesh(chunk_voxels, format_size, neighbor_voxels, neighbor_sky_li
                 if not voxel_id:
                     continue
 
+                transparent = is_transparent(voxel_id)
+
                 #top face
-                if is_void((x, y + 1, z), neighbor_voxels):
+                neighbor_id = get_neighbor_voxel_id((x, y + 1, z), neighbor_voxels)
+                if should_render_face(voxel_id, neighbor_id):
                     #get ao values
                     ao = get_ao((x, y + 1, z), neighbor_voxels, plane = 'Y')
                     flip_id = ao[1] + ao[3] > ao[0] + ao[2]
@@ -139,13 +171,20 @@ def build_chunk_mesh(chunk_voxels, format_size, neighbor_voxels, neighbor_sky_li
                     v3 = pack_data(x    , y + 1, z + 1, voxel_id, 0, ao[3], flip_id)
 
                     #flip triangle vertices for each face
-                    if flip_id:
-                        index = add_data(vertex_data, index, v1, light, v0, light, v3, light, v1, light, v3, light, v2, light)
+                    if transparent:
+                        if flip_id:
+                            water_index = add_data(water_data, water_index, v1, light, v0, light, v3, light, v1, light, v3, light, v2, light)
+                        else:
+                            water_index = add_data(water_data, water_index, v0, light, v3, light, v2, light, v0, light, v2, light, v1, light)
                     else:
-                        index = add_data(vertex_data, index, v0, light, v3, light, v2, light, v0, light, v2, light, v1, light)
+                        if flip_id:
+                            index = add_data(vertex_data, index, v1, light, v0, light, v3, light, v1, light, v3, light, v2, light)
+                        else:
+                            index = add_data(vertex_data, index, v0, light, v3, light, v2, light, v0, light, v2, light, v1, light)
 
                 #bottom face
-                if is_void((x, y - 1, z), neighbor_voxels):
+                neighbor_id = get_neighbor_voxel_id((x, y - 1, z), neighbor_voxels)
+                if should_render_face(voxel_id, neighbor_id):
                     ao = get_ao((x, y - 1, z), neighbor_voxels, plane = 'Y')
                     flip_id = ao[1] + ao[3] > ao[0] + ao[2]
                     light = get_light((x, y - 1, z), neighbor_sky_light, neighbor_block_light)
@@ -155,13 +194,20 @@ def build_chunk_mesh(chunk_voxels, format_size, neighbor_voxels, neighbor_sky_li
                     v2 = pack_data(x + 1, y, z + 1, voxel_id, 1, ao[2], flip_id)
                     v3 = pack_data(x    , y, z + 1, voxel_id, 1, ao[3], flip_id)
 
-                    if flip_id:
-                        index = add_data(vertex_data, index, v1, light, v3, light, v0, light, v1, light, v2, light, v3, light)
+                    if transparent:
+                        if flip_id:
+                            water_index = add_data(water_data, water_index, v1, light, v3, light, v0, light, v1, light, v2, light, v3, light)
+                        else:
+                            water_index = add_data(water_data, water_index, v0, light, v2, light, v3, light, v0, light, v1, light, v2, light)
                     else:
-                        index = add_data(vertex_data, index, v0, light, v2, light, v3, light, v0, light, v1, light, v2, light)
+                        if flip_id:
+                            index = add_data(vertex_data, index, v1, light, v3, light, v0, light, v1, light, v2, light, v3, light)
+                        else:
+                            index = add_data(vertex_data, index, v0, light, v2, light, v3, light, v0, light, v1, light, v2, light)
 
                 #right face
-                if is_void((x + 1, y, z), neighbor_voxels):
+                neighbor_id = get_neighbor_voxel_id((x + 1, y, z), neighbor_voxels)
+                if should_render_face(voxel_id, neighbor_id):
                     ao = get_ao((x + 1, y, z), neighbor_voxels, plane = 'X')
                     flip_id = ao[1] + ao[3] > ao[0] + ao[2]
                     light = get_light((x + 1, y, z), neighbor_sky_light, neighbor_block_light)
@@ -171,13 +217,20 @@ def build_chunk_mesh(chunk_voxels, format_size, neighbor_voxels, neighbor_sky_li
                     v2 = pack_data(x + 1, y + 1, z + 1, voxel_id, 2, ao[2], flip_id)
                     v3 = pack_data(x + 1, y    , z + 1, voxel_id, 2, ao[3], flip_id)
 
-                    if flip_id:
-                        index = add_data(vertex_data, index, v3, light, v0, light, v1, light, v3, light, v1, light, v2, light)
+                    if transparent:
+                        if flip_id:
+                            water_index = add_data(water_data, water_index, v3, light, v0, light, v1, light, v3, light, v1, light, v2, light)
+                        else:
+                            water_index = add_data(water_data, water_index, v0, light, v1, light, v2, light, v0, light, v2, light, v3, light)
                     else:
-                        index = add_data(vertex_data, index, v0, light, v1, light, v2, light, v0, light, v2, light, v3, light)
+                        if flip_id:
+                            index = add_data(vertex_data, index, v3, light, v0, light, v1, light, v3, light, v1, light, v2, light)
+                        else:
+                            index = add_data(vertex_data, index, v0, light, v1, light, v2, light, v0, light, v2, light, v3, light)
 
                 #left face
-                if is_void((x - 1, y, z), neighbor_voxels):
+                neighbor_id = get_neighbor_voxel_id((x - 1, y, z), neighbor_voxels)
+                if should_render_face(voxel_id, neighbor_id):
                     ao = get_ao((x - 1, y, z), neighbor_voxels, plane = 'X')
                     flip_id = ao[1] + ao[3] > ao[0] + ao[2]
                     light = get_light((x - 1, y, z), neighbor_sky_light, neighbor_block_light)
@@ -187,13 +240,20 @@ def build_chunk_mesh(chunk_voxels, format_size, neighbor_voxels, neighbor_sky_li
                     v2 = pack_data(x, y + 1, z + 1, voxel_id, 3, ao[2], flip_id)
                     v3 = pack_data(x, y    , z + 1, voxel_id, 3, ao[3], flip_id)
 
-                    if flip_id:
-                        index = add_data(vertex_data, index, v3, light, v1, light, v0, light, v3, light, v2, light, v1, light)
+                    if transparent:
+                        if flip_id:
+                            water_index = add_data(water_data, water_index, v3, light, v1, light, v0, light, v3, light, v2, light, v1, light)
+                        else:
+                            water_index = add_data(water_data, water_index, v0, light, v2, light, v1, light, v0, light, v3, light, v2, light)
                     else:
-                        index = add_data(vertex_data, index, v0, light, v2, light, v1, light, v0, light, v3, light, v2, light)
+                        if flip_id:
+                            index = add_data(vertex_data, index, v3, light, v1, light, v0, light, v3, light, v2, light, v1, light)
+                        else:
+                            index = add_data(vertex_data, index, v0, light, v2, light, v1, light, v0, light, v3, light, v2, light)
 
                 #back face
-                if is_void((x, y, z - 1), neighbor_voxels):
+                neighbor_id = get_neighbor_voxel_id((x, y, z - 1), neighbor_voxels)
+                if should_render_face(voxel_id, neighbor_id):
                     ao = get_ao((x, y, z - 1), neighbor_voxels, plane = 'Z')
                     flip_id = ao[1] + ao[3] > ao[0] + ao[2]
                     light = get_light((x, y, z - 1), neighbor_sky_light, neighbor_block_light)
@@ -203,13 +263,20 @@ def build_chunk_mesh(chunk_voxels, format_size, neighbor_voxels, neighbor_sky_li
                     v2 = pack_data(x + 1, y + 1, z, voxel_id, 4, ao[2], flip_id)
                     v3 = pack_data(x + 1, y    , z, voxel_id, 4, ao[3], flip_id)
 
-                    if flip_id:
-                        index = add_data(vertex_data, index, v3, light, v0, light, v1, light, v3, light, v1, light, v2, light)
+                    if transparent:
+                        if flip_id:
+                            water_index = add_data(water_data, water_index, v3, light, v0, light, v1, light, v3, light, v1, light, v2, light)
+                        else:
+                            water_index = add_data(water_data, water_index, v0, light, v1, light, v2, light, v0, light, v2, light, v3, light)
                     else:
-                        index = add_data(vertex_data, index, v0, light, v1, light, v2, light, v0, light, v2, light, v3, light)
+                        if flip_id:
+                            index = add_data(vertex_data, index, v3, light, v0, light, v1, light, v3, light, v1, light, v2, light)
+                        else:
+                            index = add_data(vertex_data, index, v0, light, v1, light, v2, light, v0, light, v2, light, v3, light)
 
                 #front face
-                if is_void((x, y, z + 1), neighbor_voxels):
+                neighbor_id = get_neighbor_voxel_id((x, y, z + 1), neighbor_voxels)
+                if should_render_face(voxel_id, neighbor_id):
                     ao = get_ao((x, y, z + 1), neighbor_voxels, plane = 'Z')
                     flip_id = ao[1] + ao[3] > ao[0] + ao[2]
                     light = get_light((x, y, z + 1), neighbor_sky_light, neighbor_block_light)
@@ -219,9 +286,15 @@ def build_chunk_mesh(chunk_voxels, format_size, neighbor_voxels, neighbor_sky_li
                     v2 = pack_data(x + 1, y + 1, z + 1, voxel_id, 5, ao[2], flip_id)
                     v3 = pack_data(x + 1, y    , z + 1, voxel_id, 5, ao[3], flip_id)
 
-                    if flip_id:
-                        index = add_data(vertex_data, index, v3, light, v1, light, v0, light, v3, light, v2, light, v1, light)
+                    if transparent:
+                        if flip_id:
+                            water_index = add_data(water_data, water_index, v3, light, v1, light, v0, light, v3, light, v2, light, v1, light)
+                        else:
+                            water_index = add_data(water_data, water_index, v0, light, v2, light, v1, light, v0, light, v3, light, v2, light)
                     else:
-                        index = add_data(vertex_data, index, v0, light, v2, light, v1, light, v0, light, v3, light, v2, light)
+                        if flip_id:
+                            index = add_data(vertex_data, index, v3, light, v1, light, v0, light, v3, light, v2, light, v1, light)
+                        else:
+                            index = add_data(vertex_data, index, v0, light, v2, light, v1, light, v0, light, v3, light, v2, light)
 
-    return vertex_data[:index]
+    return vertex_data[:index], water_data[:water_index]

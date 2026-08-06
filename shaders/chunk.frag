@@ -12,11 +12,13 @@ in float shading;
 
 void main()
 {
-    vec3 tex_col = texture(u_texture_0, uv).rgb;
-    tex_col = pow(tex_col, gamma);
+    vec4 tex = texture(u_texture_0, uv);
+    vec3 tex_col = pow(tex.rgb, gamma);
 
     tex_col *= shading;
 
     tex_col = pow(tex_col, inv_gamma);
-    fragColor = vec4(tex_col, 1);
+    //water/glass tiles carry real alpha in the atlas, opaque tiles are
+    //always 1.0 - same shader draws both passes, this just lets it through
+    fragColor = vec4(tex_col, tex.a);
 }

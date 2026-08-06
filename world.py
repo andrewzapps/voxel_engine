@@ -1,5 +1,5 @@
 from settings import *
-from blocks import BLOCK_TYPES
+from blocks import BLOCK_TYPES, WATER
 from lighting import MAX_LIGHT, propagate_block_light
 from world_objects.chunk import Chunk
 
@@ -88,8 +88,7 @@ class World():
 
     def _unload_chunk(self, coord):
         chunk = self.chunks.pop(coord)
-        if chunk.mesh is not None and chunk.mesh.vao is not None:
-            chunk.mesh.vao.release()
+        chunk.release_mesh()
 
         #neighbours bordering the chunk that just disappeared need their
         #boundary faces rebuilt now that it's gone
@@ -127,6 +126,23 @@ class World():
                     neighbor = self.chunks.get((cx + dx, cy + dy, cz + dz))
                     neighbors[slot] = neighbor.voxels if neighbor is not None else EMPTY_CHUNK_VOXELS
         return neighbors
+
+    def is_water(self, wx, wy, wz):
+        return int(self.get_voxel(wx, wy, wz)) == WATER
+
+    def aabb_overlaps_water(self, min_pos, max_pos):
+        min_x, min_y, min_z = int(glm.floor(min_pos.x)), int(glm.floor(min_pos.y)), int(glm.floor(min_pos.z))
+        max_x, max_y, max_z = int(glm.floor(max_pos.x)), int(glm.floor(max_pos.y)), int(glm.floor(max_pos.z))
+
+        for wx in range(min_x, max_x + 1):
+            for wy in range(min_y, max_y + 1):
+                for wz in range(min_z, max_z + 1):
+                    if self.is_water(wx, wy, wz):
+                        if (min_pos.x < wx + 1 and max_pos.x > wx and
+                                min_pos.y < wy + 1 and max_pos.y > wy and
+                                min_pos.z < wz + 1 and max_pos.z > wz):
+                            return True
+        return False
 
     def is_solid(self, wx, wy, wz):
         voxel_id = int(self.get_voxel(wx, wy, wz))
@@ -340,3 +356,11 @@ class World():
     def render(self):
         for chunk in self.chunks.values():
             chunk.render()
+
+        #water goes in a second pass, after every opaque face is already in
+        #the depth buffer, with depth writes off so it blends instead of
+        #fighting with itself where multiple water faces overlap
+        self.app.ctx.screen.depth_mask = False
+        for chunk in self.chunks.values():
+            chunk.render_water()
+        self.app.ctx.screen.depth_mask = True

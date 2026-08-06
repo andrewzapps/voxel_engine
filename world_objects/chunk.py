@@ -1,8 +1,8 @@
 from settings import *
-from blocks import GRASS, DIRT, SAND, STONE
+from blocks import GRASS, DIRT, SAND, STONE, WATER
 from lighting import sky_light_column
 from meshes.chunk_mesh import chunkMesh
-from world_gen import cave_column, is_cave_voxel, ore_id, terrain_height, SAND_LEVEL
+from world_gen import cave_column, is_cave_voxel, ore_id, terrain_height, SAND_LEVEL, SEA_LEVEL
 
 class Chunk:
     def __init__(self, world, position):
@@ -27,10 +27,17 @@ class Chunk:
         if not self.is_empty:
             self.mesh = chunkMesh(self)
 
-    def rebuild_mesh(self):
-        if self.mesh is not None and self.mesh.vao is not None:
+    def release_mesh(self):
+        if self.mesh is None:
+            return
+        if self.mesh.vao is not None:
             self.mesh.vao.release()
-            self.mesh = None
+        if self.mesh.water_vao is not None:
+            self.mesh.water_vao.release()
+        self.mesh = None
+
+    def rebuild_mesh(self):
+        self.release_mesh()
 
         self.is_empty = not np.any(self.voxels)
         if not self.is_empty:
@@ -40,6 +47,11 @@ class Chunk:
         if self.mesh is not None:
             self.set_uniform()
             self.mesh.render()
+
+    def render_water(self):
+        if self.mesh is not None:
+            self.set_uniform()
+            self.mesh.render_water()
     
     def build_voxels(self):
         #empty chunk
@@ -78,6 +90,14 @@ class Chunk:
                     else:
                         block_id = ore_id(wx, wy, wz, world_height, ore_cache) or STONE
                     voxels[x + CHUNK_SIZE * z + CHUNK_AREA * y] = block_id
+
+                #anything still open between the terrain and sea level fills
+                #in with water - lakes/oceans wherever the ground dips low
+                if world_height <= SEA_LEVEL:
+                    water_start = max(0, local_height)
+                    water_end = min(SEA_LEVEL - cy, CHUNK_SIZE - 1)
+                    for y in range(water_start, water_end + 1):
+                        voxels[x + CHUNK_SIZE * z + CHUNK_AREA * y] = WATER
 
         if np.any(voxels):
             self.is_empty = False

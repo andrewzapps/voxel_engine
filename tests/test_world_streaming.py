@@ -42,12 +42,13 @@ def test_solid_chunk_surrounded_by_solid_neighbors_has_no_visible_faces():
     neighbor_voxels = np.full((27, CHUNK_VOL), 1, dtype='uint8')
     neighbor_light = np.zeros((27, CHUNK_VOL), dtype='uint8')
 
-    vertex_data = build_chunk_mesh(
+    vertex_data, water_data = build_chunk_mesh(
         chunk_voxels, format_size=2, neighbor_voxels=neighbor_voxels,
         neighbor_sky_light=neighbor_light, neighbor_block_light=neighbor_light,
     )
 
     assert len(vertex_data) == 0
+    assert len(water_data) == 0
 
 
 def test_single_voxel_surrounded_by_air_gets_all_six_faces():
@@ -56,10 +57,56 @@ def test_single_voxel_surrounded_by_air_gets_all_six_faces():
     neighbor_voxels = np.zeros((27, CHUNK_VOL), dtype='uint8')
     neighbor_light = np.zeros((27, CHUNK_VOL), dtype='uint8')
 
-    vertex_data = build_chunk_mesh(
+    vertex_data, water_data = build_chunk_mesh(
         chunk_voxels, format_size=2, neighbor_voxels=neighbor_voxels,
         neighbor_sky_light=neighbor_light, neighbor_block_light=neighbor_light,
     )
 
     #6 faces * 2 triangles * 3 vertices, 2 words (packed_data + light) each
     assert len(vertex_data) == 72
+    assert len(water_data) == 0
+
+
+def test_water_voxel_does_not_render_a_face_against_more_water():
+    from blocks import WATER
+
+    chunk_voxels = np.zeros(CHUNK_VOL, dtype='uint8')
+    chunk_voxels[0] = WATER
+    neighbor_voxels = np.full((27, CHUNK_VOL), WATER, dtype='uint8')
+    neighbor_light = np.zeros((27, CHUNK_VOL), dtype='uint8')
+
+    vertex_data, water_data = build_chunk_mesh(
+        chunk_voxels, format_size=2, neighbor_voxels=neighbor_voxels,
+        neighbor_sky_light=neighbor_light, neighbor_block_light=neighbor_light,
+    )
+
+    assert len(vertex_data) == 0
+    assert len(water_data) == 0
+
+
+def test_water_voxel_renders_against_air_and_against_solid_stone():
+    from blocks import STONE, WATER
+
+    chunk_voxels = np.zeros(CHUNK_VOL, dtype='uint8')
+    chunk_voxels[0] = WATER  # x=0, y=0, z=0
+    neighbor_voxels = np.zeros((27, CHUNK_VOL), dtype='uint8')
+    neighbor_light = np.zeros((27, CHUNK_VOL), dtype='uint8')
+
+    #surrounded entirely by air - water should render all 6 faces into the
+    #water buffer, none into the opaque one
+    vertex_data, water_data = build_chunk_mesh(
+        chunk_voxels, format_size=2, neighbor_voxels=neighbor_voxels,
+        neighbor_sky_light=neighbor_light, neighbor_block_light=neighbor_light,
+    )
+    assert len(vertex_data) == 0
+    assert len(water_data) == 72
+
+    #stone is a different block too, so the same "differs from me" rule
+    #still renders a face - it just won't be visible behind the stone
+    neighbor_voxels_stone = np.full((27, CHUNK_VOL), STONE, dtype='uint8')
+    vertex_data2, water_data2 = build_chunk_mesh(
+        chunk_voxels, format_size=2, neighbor_voxels=neighbor_voxels_stone,
+        neighbor_sky_light=neighbor_light, neighbor_block_light=neighbor_light,
+    )
+    assert len(vertex_data2) == 0
+    assert len(water_data2) == 72

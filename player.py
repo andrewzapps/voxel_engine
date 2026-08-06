@@ -11,6 +11,7 @@ class Player(Camera):
         self.app = app
         self.velocity = glm.vec3(0)
         self.on_ground = False
+        self.in_water = False
         if position is None:
             super().__init__(glm.vec3(CENTER_XZ, 0, CENTER_XZ), yaw, pitch)
             self.snap_to_ground()
@@ -66,11 +67,18 @@ class Player(Camera):
 
     def apply_physics(self):
         dt = min(self.app.delta_time, MAX_DELTA_MS) * 0.001
+        self.in_water = self.app.scene.world.aabb_overlaps_water(*self.get_aabb())
 
+        gravity = WATER_GRAVITY if self.in_water else GRAVITY
         if not self.on_ground:
-            self.velocity.y -= GRAVITY * dt
+            self.velocity.y -= gravity * dt
         elif self.velocity.y < 0:
             self.velocity.y = 0
+
+        if self.in_water:
+            self.velocity.y = max(self.velocity.y, -WATER_SINK_SPEED)
+            if pg.key.get_pressed()[pg.K_SPACE]:
+                self.velocity.y = WATER_SWIM_SPEED
 
         pos = glm.vec3(self.position)
 
@@ -117,6 +125,8 @@ class Player(Camera):
         dt = min(self.app.delta_time, MAX_DELTA_MS) * 0.001
 
         speed = PLAYER_RUN_SPEED if key_state[pg.K_LSHIFT] or key_state[pg.K_RSHIFT] else PLAYER_WALK_SPEED
+        if self.in_water:
+            speed *= WATER_SPEED_MULTIPLIER
 
         forward = glm.vec3(self.forward.x, 0, self.forward.z)
         if glm.length(forward) > 0:

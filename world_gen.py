@@ -19,9 +19,9 @@ BASE_FREQUENCY = 0.01
 BASE_AMPLITUDE = 24
 HEIGHT_OFFSET = 32
 
-#beaches - we don't have real water blocks placed yet, but capping low
-#ground in sand makes room ready for when we do
+#beaches sit right at the waterline
 SAND_LEVEL = 30
+SEA_LEVEL = SAND_LEVEL
 
 #caves are cheap winding tunnels carved per column rather than full 3d
 #noise per voxel - a real 3d field was too slow to generate on the fly
