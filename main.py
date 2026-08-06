@@ -71,6 +71,8 @@ class voxelEngine:
         self.hud = HUD(self)
         if self.save_data:
             self.hud.selected_slot = self.save_data.get('hotbar_slot', 0)
+            if self.save_data.get('inventory') is not None:
+                self.hud.inventory.load_serializable(self.save_data['inventory'])
 
     def update(self):
         self.delta_time = min(self.clock.tick(), 50)

@@ -103,6 +103,9 @@ class Player(Camera):
         self.position = pos
 
     def mouse_control(self):
+        if self.app.hud.inventory_open:
+            return
+
         mouse_dx, mouse_dy = pg.mouse.get_rel()
         if mouse_dx:
             self.rotate_yaw(delta_x=mouse_dx * MOUSE_SENSITIVITY)

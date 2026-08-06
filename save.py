@@ -19,6 +19,7 @@ def save_world(world, player, hud, seed):
             'pitch': glm.degrees(player.pitch),
         },
         'hotbar_slot': hud.selected_slot,
+        'inventory': hud.inventory.to_serializable(),
     }
 
     with open(SAVE_PATH, 'w') as save_file:
@@ -42,4 +43,5 @@ def load_world():
         'edits': edits,
         'player': data.get('player'),
         'hotbar_slot': data.get('hotbar_slot', 0),
+        'inventory': data.get('inventory'),
     }

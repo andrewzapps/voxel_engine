@@ -24,6 +24,8 @@ class VoxelHandler:
             self.outline.render(*self.selected_block)
 
     def handle_event(self, event):
+        if self.app.hud.inventory_open:
+            return
         if event.type != pg.MOUSEBUTTONDOWN:
             return
 
@@ -37,12 +39,18 @@ class VoxelHandler:
             return
 
         wx, wy, wz = self.selected_block
+        broken_id = self.app.scene.world.get_voxel(wx, wy, wz)
         self.app.scene.world.remove_voxel(wx, wy, wz)
+        self.app.hud.inventory.add_item(broken_id)
 
     def place_block(self):
         if self.selected_block is None or self.selected_normal is None:
             return
         if self.selected_normal == (0, 0, 0):
+            return
+
+        held_block_id = self.app.hud.selected_block_id
+        if held_block_id is None:
             return
 
         bx, by, bz = self.selected_block
@@ -55,7 +63,8 @@ class VoxelHandler:
         if self._overlaps_player(px, py, pz):
             return
 
-        self.app.scene.world.set_voxel(px, py, pz, self.app.hud.selected_block_id)
+        self.app.scene.world.set_voxel(px, py, pz, held_block_id)
+        self.app.hud.inventory.take_one(self.app.hud.selected_slot)
 
     def _overlaps_player(self, px, py, pz):
         player_min, player_max = self.app.player.get_aabb()

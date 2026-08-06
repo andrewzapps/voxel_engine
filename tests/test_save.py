@@ -1,5 +1,6 @@
 import glm
 
+from inventory import Inventory
 from save import SAVE_PATH, load_world, save_world
 
 
@@ -13,6 +14,7 @@ class FakePlayer:
 class FakeHud:
     def __init__(self):
         self.selected_slot = 4
+        self.inventory = Inventory()
 
 
 class FakeWorld:
