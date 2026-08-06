@@ -2,6 +2,11 @@ from settings import *
 import pygame as pg
 from meshes.selection_outline import SelectionOutline
 
+ATTACK_RANGE = 4.0
+ATTACK_DAMAGE = 4
+#how narrow the "in front of you" cone is - 1.0 is dead center, 0.0 is 90 degrees off
+ATTACK_DOT_THRESHOLD = 0.6
+
 
 class VoxelHandler:
     def __init__(self, app):
@@ -35,6 +40,12 @@ class VoxelHandler:
             self.place_block()
 
     def break_block(self):
+        #a mob standing where you're aiming takes priority over the block behind it
+        target = self._find_attack_target()
+        if target is not None:
+            target.take_damage(ATTACK_DAMAGE)
+            return
+
         if self.selected_block is None:
             return
 
@@ -42,6 +53,21 @@ class VoxelHandler:
         broken_id = self.app.scene.world.get_voxel(wx, wy, wz)
         self.app.scene.world.remove_voxel(wx, wy, wz)
         self.app.hud.inventory.add_item(broken_id)
+
+    def _find_attack_target(self):
+        player = self.app.player
+        closest, closest_dist = None, ATTACK_RANGE
+
+        for mob in self.app.scene.world.mobs:
+            to_mob = mob.position - player.position
+            dist = glm.length(to_mob)
+            if dist < 0.01 or dist > closest_dist:
+                continue
+            if glm.dot(glm.normalize(to_mob), player.forward) < ATTACK_DOT_THRESHOLD:
+                continue
+            closest, closest_dist = mob, dist
+
+        return closest
 
     def place_block(self):
         if self.selected_block is None or self.selected_normal is None:

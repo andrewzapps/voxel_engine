@@ -1,9 +1,22 @@
+import math
+import random
+
+import moderngl as mgl
+
 from settings import *
-from blocks import BLOCK_TYPES, WATER
-from lighting import MAX_LIGHT, propagate_block_light
+from blocks import BLOCK_TYPES, GRASS, WATER
+from entities.mob import HOSTILE, MOB_STATS, Mob, PASSIVE
+from lighting import MAX_LIGHT, day_factor, propagate_block_light
+from meshes.cube_mesh import CubeMesh
 from world_objects.chunk import Chunk
 
 EMPTY_CHUNK_VOXELS = np.zeros(CHUNK_VOL, dtype='uint8')
+
+MAX_MOBS = 15
+SPAWN_CHECK_INTERVAL = 4.0
+SPAWN_MIN_RADIUS = 10
+SPAWN_MAX_RADIUS = 24
+DESPAWN_RADIUS = 48
 
 
 def _local_index(lx, ly, lz):
@@ -51,6 +64,13 @@ class World():
 
         if self.light_sources:
             self.recompute_lighting()
+
+        self.mobs = []
+        self._spawn_timer = SPAWN_CHECK_INTERVAL
+        self.mob_meshes = {
+            PASSIVE: CubeMesh(app, MOB_STATS[PASSIVE]['color']),
+            HOSTILE: CubeMesh(app, MOB_STATS[HOSTILE]['color']),
+        }
 
     def _coords_in_range(self, center_cx, center_cz):
         coords = set()
@@ -352,10 +372,49 @@ class World():
 
     def update(self):
         self.stream_chunks()
+        self._update_mobs()
+
+    def _update_mobs(self):
+        dt = min(self.app.delta_time, 50) * 0.001
+        player = self.app.player
+
+        self._spawn_timer -= dt
+        if self._spawn_timer <= 0:
+            self._spawn_timer = SPAWN_CHECK_INTERVAL
+            self._try_spawn_mob()
+
+        for mob in self.mobs:
+            mob.update(player, dt)
+
+        self.mobs = [
+            mob for mob in self.mobs
+            if mob.alive and glm.distance(mob.position, player.position) < DESPAWN_RADIUS
+        ]
+
+    def _try_spawn_mob(self):
+        if len(self.mobs) >= MAX_MOBS:
+            return
+
+        player = self.app.player
+        angle = random.uniform(0, 2 * math.pi)
+        dist = random.uniform(SPAWN_MIN_RADIUS, SPAWN_MAX_RADIUS)
+        sx = int(player.position.x + math.cos(angle) * dist)
+        sz = int(player.position.z + math.sin(angle) * dist)
+
+        ground = self.get_ground_height(sx, sz)
+        if ground <= 0 or self.get_voxel(sx, ground - 1, sz) != GRASS:
+            return  # only spawn on open grass, keep it simple
+
+        #passive mobs come out in daylight, hostiles once it's dark - same
+        #split real minecraft uses for spawning
+        mob_type = PASSIVE if day_factor(self.app.time) > 0.5 else HOSTILE
+        self.mobs.append(Mob(self.app, glm.vec3(sx + 0.5, ground, sz + 0.5), mob_type))
 
     def render(self):
         for chunk in self.chunks.values():
             chunk.render()
+
+        self._render_mobs()
 
         #water goes in a second pass, after every opaque face is already in
         #the depth buffer, with depth writes off so it blends instead of
@@ -364,3 +423,17 @@ class World():
         for chunk in self.chunks.values():
             chunk.render_water()
         self.app.ctx.screen.depth_mask = True
+
+    def _render_mobs(self):
+        if not self.mobs:
+            return
+
+        player = self.app.player
+        self.app.ctx.disable(mgl.CULL_FACE)
+        for mob in self.mobs:
+            mesh = self.mob_meshes[mob.mob_type]
+            mesh.program['m_proj'].write(player.m_proj)
+            mesh.program['m_view'].write(player.m_view)
+            mesh.program['m_model'].write(mob.get_model_matrix())
+            mesh.vao.render()
+        self.app.ctx.enable(mgl.CULL_FACE)

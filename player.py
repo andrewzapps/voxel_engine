@@ -12,6 +12,7 @@ class Player(Camera):
         self.velocity = glm.vec3(0)
         self.on_ground = False
         self.in_water = False
+        self.health = PLAYER_MAX_HEALTH
         if position is None:
             super().__init__(glm.vec3(CENTER_XZ, 0, CENTER_XZ), yaw, pitch)
             self.snap_to_ground()
@@ -24,6 +25,16 @@ class Player(Camera):
         self.position.y = ground + PLAYER_EYE_HEIGHT
         self.velocity = glm.vec3(0)
         self.on_ground = True
+
+    def take_damage(self, amount):
+        self.health = max(0, self.health - amount)
+        if self.health == 0:
+            self.respawn()
+
+    def respawn(self):
+        self.health = PLAYER_MAX_HEALTH
+        self.position = glm.vec3(SPAWN_POINT.x, self.position.y, SPAWN_POINT.z)
+        self.snap_to_ground()
 
     def update(self):
         self.keyboard_control()

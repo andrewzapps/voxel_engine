@@ -5,7 +5,7 @@ from blocks import ATLAS_COLS, BLOCK_TYPES
 from crafting import consume_recipe, match_recipe
 from inventory import HOTBAR_SIZE, Inventory, ItemStack
 from meshes.hud_mesh import HudMesh
-from settings import WIN_RES
+from settings import PLAYER_MAX_HEALTH, WIN_RES
 
 SLOT_SIZE = 56
 SLOT_MARGIN = 6
@@ -176,6 +176,7 @@ class HUD:
     def update(self):
         self.surface.fill((0, 0, 0, 0))
         self._draw_crosshair()
+        self._draw_health()
         self._draw_slots(self._hotbar_rects(), range(0, HOTBAR_SIZE), highlight_selected=True)
         if self.inventory_open:
             self._draw_slots(self._main_inventory_rects(), range(HOTBAR_SIZE, len(self.inventory.slots)))
@@ -196,6 +197,11 @@ class HUD:
         recipe = match_recipe(self.crafting_grid)
         if recipe is not None:
             self._draw_stack(ItemStack(recipe.output_id, recipe.output_count), output_rect)
+
+    def _draw_health(self):
+        health = self.app.player.health
+        label = self.font.render(f'{health} / {PLAYER_MAX_HEALTH} HP', True, (255, 90, 90))
+        self.surface.blit(label, (20, self.height - SLOT_SIZE - HOTBAR_BOTTOM_MARGIN - 30))
 
     def _draw_crosshair(self):
         if self.inventory_open:
